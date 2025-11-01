@@ -42,3 +42,4 @@ Thumbs.db
 
 # Badge history data
 data/
+cloudflare-credentials.json

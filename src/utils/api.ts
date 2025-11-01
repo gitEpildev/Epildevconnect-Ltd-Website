@@ -1,51 +1,100 @@
 import axios from 'axios';
 
+// CRITICAL: Use /myhub/api/* paths to match Cloudflare tunnel routing
+// Backend handles both /api/* and /myhub/api/*, but Cloudflare routes /myhub/* to backend
+const getAbsoluteBaseURL = () => {
+  if (typeof window !== 'undefined') {
+    const base = `${window.location.protocol}//${window.location.host}/myhub/api`;
+    console.log('[API] baseURL calculated:', base, 'from:', window.location.href);
+    return base;
+  }
+  return '/myhub/api'; // Fallback for SSR (shouldn't happen)
+};
+
+// Create axios instance - baseURL will be set dynamically by interceptor
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: '/myhub/api', // Initial value, will be overridden by interceptor
   withCredentials: true,
+  // Let axios handle status codes normally - throw on 4xx/5xx
+  validateStatus: (status) => status < 400,
+  timeout: 10000, // 10 second timeout
 });
 
-// Lanyard API
+// Set baseURL dynamically at request time (ensures window.location is available)
+api.interceptors.request.use((config) => {
+  // Override baseURL dynamically
+  const dynamicBaseURL = getAbsoluteBaseURL();
+  config.baseURL = dynamicBaseURL;
+  
+  const fullUrl = config.baseURL + (config.url || '');
+  console.log('[API Request]', config.method?.toUpperCase(), fullUrl);
+  return config;
+}, (error) => {
+  console.error('[API Request Error]', error);
+  return Promise.reject(error);
+});
+
+// Simple response interceptor - just log, don't interfere
+api.interceptors.response.use(
+  (response) => {
+    console.log('[API Response]', response.status, response.config.url);
+    return response;
+  },
+  (error) => {
+    console.error('[API Response Error]', error.response?.status, error.config?.url, error.message);
+    return Promise.reject(error);
+  }
+);
+
+// Lanyard API - simplified: just fetch and return data
 export const fetchLanyardData = async (userId: string) => {
+  console.log('[API] fetchLanyardData called for userId:', userId);
   try {
     const response = await api.get(`/lanyard/${userId}`);
+    console.log('[API] fetchLanyardData success:', response.status);
     return response.data;
-  } catch (error) {
-    console.error('Failed to fetch Lanyard data:', error);
-    return null;
+  } catch (error: any) {
+    console.error('[API] fetchLanyardData error:', error.response?.status, error.message);
+    throw error;
   }
 };
 
-// Discord Profile API (badges, banner, etc.)
+// Discord Profile API - simplified: just fetch and return data
 export const fetchDiscordProfile = async (userId: string) => {
+  console.log('[API] fetchDiscordProfile called for userId:', userId);
   try {
     const response = await api.get(`/discord/profile/${userId}`);
+    console.log('[API] fetchDiscordProfile success:', response.status);
     return response.data;
-  } catch (error) {
-    console.error('Failed to fetch Discord profile:', error);
-    return null;
+  } catch (error: any) {
+    console.error('[API] fetchDiscordProfile error:', error.response?.status, error.message);
+    throw error;
   }
 };
 
-// Last.fm API
+// Last.fm API - simplified: just fetch and return data
 export const fetchLastFmData = async () => {
+  console.log('[API] fetchLastFmData called');
   try {
     const response = await api.get('/lastfm/recent');
+    console.log('[API] fetchLastFmData success:', response.status);
     return response.data;
-  } catch (error) {
-    console.error('Failed to fetch Last.fm data:', error);
-    return null;
+  } catch (error: any) {
+    console.error('[API] fetchLastFmData error:', error.response?.status, error.message);
+    throw error;
   }
 };
 
-// WakaTime API
+// WakaTime API - simplified: just fetch and return data
 export const fetchWakaTimeData = async () => {
+  console.log('[API] fetchWakaTimeData called');
   try {
     const response = await api.get('/wakatime/stats');
+    console.log('[API] fetchWakaTimeData success:', response.status);
     return response.data;
-  } catch (error) {
-    console.error('Failed to fetch WakaTime data:', error);
-    return null;
+  } catch (error: any) {
+    console.error('[API] fetchWakaTimeData error:', error.response?.status, error.message);
+    throw error;
   }
 };
 
@@ -63,6 +112,7 @@ export const getAuthUser = async () => {
 export const logout = async () => {
   try {
     await api.post('/auth/logout');
+    window.location.href = '/myhub/home';
   } catch (error) {
     console.error('Failed to logout:', error);
   }
@@ -85,6 +135,19 @@ export const sendEmail = async (name: string, email: string, subject: string, me
     return response.data;
   } catch (error) {
     console.error('Failed to send email:', error);
+    throw error;
+  }
+};
+
+// System Specs API
+export const fetchSystemSpecs = async () => {
+  console.log('[API] fetchSystemSpecs called');
+  try {
+    const response = await api.get('/system/specs');
+    console.log('[API] fetchSystemSpecs success:', response.status);
+    return response.data;
+  } catch (error: any) {
+    console.error('[API] fetchSystemSpecs error:', error.response?.status, error.message);
     throw error;
   }
 };

@@ -1,0 +1,35 @@
+# Cloudflare Tunnel Configuration
+# This file is used by cloudflared to route traffic to your local services
+
+tunnel: 143de656-3edc-4cfe-9463-50fb6b354318
+credentials-file: /etc/cloudflared/credentials.json
+
+# Ingress rules - routes traffic from Cloudflare to your services
+# Order matters: more specific routes should come first
+ingress:
+  # Route /myhub/api/* FIRST (more specific) - when app at /myhub/* makes /api/* calls
+  - hostname: developer.epildevconnect.uk
+    path: /myhub/api/*
+    service: http://localhost:1600
+  
+  # Route all other API calls to backend (backend handles routing)
+  - hostname: developer.epildevconnect.uk
+    path: /api/*
+    service: http://localhost:1600
+  
+  # Route auth endpoints to backend
+  - hostname: developer.epildevconnect.uk
+    path: /auth/*
+    service: http://localhost:1600
+  
+  # Route /myhub/* to backend (serves frontend static files) - must be last
+  - hostname: developer.epildevconnect.uk
+    path: /myhub/*
+    service: http://localhost:1600
+  
+  # Route root to backend (serves frontend)
+  - hostname: developer.epildevconnect.uk
+    service: http://localhost:1600
+  
+  # Catch-all: return 404 for unmatched routes
+  - service: http_status:404

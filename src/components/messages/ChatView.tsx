@@ -5,7 +5,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 
 const api = axios.create({
-  baseURL: '/', // Use relative path to work with Cloudflare tunnel
+  baseURL: '/myhub', // Use /myhub base to match routing
   withCredentials: true,
 });
 
@@ -103,9 +103,10 @@ export default function ChatView({
       setMessages([...messages, response.data.message]);
       setNewMessage('');
       scrollToBottom();
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      alert('Failed to send message. Please try again.');
+    } catch (error: any) {
+      console.error('Failed to send message:', error?.response?.status, error?.response?.data, error?.message);
+      const errorMsg = error?.response?.data?.error || error?.message || 'Failed to send message. Please try again.';
+      alert(errorMsg);
     } finally {
       setIsSending(false);
     }

@@ -10,6 +10,7 @@ import {
   Mail, 
   MessageSquare,
   Shield,
+  Monitor,
   Menu, 
   X 
 } from 'lucide-react';
@@ -17,11 +18,12 @@ import axios from 'axios';
 
 const baseNavItems = [
   { name: 'Home', path: '/home', icon: Home },
+  { name: 'Contact', path: '/contact', icon: Mail },
   { name: 'Projects', path: '/projects', icon: FolderGit2 },
   { name: 'Tech Stack', path: '/tech-stack', icon: Wrench },
-  { name: 'Experience', path: '/experience', icon: Briefcase },
+  { name: 'System Specs', path: '/system-specs', icon: Monitor },
   { name: 'Code Viewer', path: '/code-viewer', icon: Code2 },
-  { name: 'Contact', path: '/contact', icon: Mail },
+  { name: 'Experience', path: '/experience', icon: Briefcase },
 ];
 
 const messagesNavItem = { name: 'Messages', path: '/messages', icon: MessageSquare };
@@ -39,7 +41,7 @@ export default function Navigation() {
 
   const checkAdminStatus = async () => {
     try {
-      const response = await axios.get('/auth/user', {
+      const response = await axios.get('/myhub/api/auth/user', {
         withCredentials: true,
       });
       
@@ -53,11 +55,11 @@ export default function Navigation() {
         if (userId === adminId) {
           // Admin user: show base + messages + admin
           setIsAdmin(true);
-          setNavItems([...baseNavItems.slice(0, 5), messagesNavItem, baseNavItems[5], adminNavItem]);
+          setNavItems([...baseNavItems.slice(0, 6), messagesNavItem, baseNavItems[6], adminNavItem]);
         } else {
           // Regular logged-in user: show base + messages
           setIsAdmin(false);
-          setNavItems([...baseNavItems.slice(0, 5), messagesNavItem, baseNavItems[5]]);
+          setNavItems([...baseNavItems.slice(0, 6), messagesNavItem, baseNavItems[6]]);
         }
       } else {
         // Not logged in: show only base items

@@ -5,7 +5,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 
 const api = axios.create({
-  baseURL: '/', // Use relative path to work with Cloudflare tunnel
+  baseURL: '/myhub', // Use /myhub base to match routing
   withCredentials: true,
 });
 
@@ -37,7 +37,7 @@ export default function AdminDashboard() {
       const authResponse = await api.get('/auth/user');
       if (!authResponse.data.user) {
         // Redirect to Discord login
-        window.location.href = '/auth/discord';
+        window.location.href = '/myhub/auth/discord';
         return;
       }
 
@@ -50,7 +50,7 @@ export default function AdminDashboard() {
         setError('Access Denied: Admin privileges required');
         setIsAdmin(false);
       } else if (error.response?.status === 401) {
-        window.location.href = '/auth/discord';
+        window.location.href = '/myhub/auth/discord';
       } else {
         setError('Failed to load admin dashboard');
       }
@@ -70,6 +70,16 @@ export default function AdminDashboard() {
       setUsers(response.data.users);
     } catch (error) {
       alert('Failed to block user');
+    }
+  };
+
+  const handleSeedTestMessages = async () => {
+    try {
+      const response = await api.post('/myhub/api/admin/seed-test-messages');
+      alert(response.data.message || 'Test messages added successfully!');
+      // Optionally refresh page or show success message
+    } catch (error) {
+      alert('Failed to seed test messages');
     }
   };
 
@@ -148,10 +158,21 @@ export default function AdminDashboard() {
               Admin Dashboard
             </h1>
           </div>
-          <p className="text-xl text-gray-400 font-mono flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            {users.length} registered users
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xl text-gray-400 font-mono flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              {users.length} registered users
+            </p>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleSeedTestMessages}
+              className="px-4 py-2 rounded-xl bg-quantum-glow text-dark-900 font-mono font-semibold hover:opacity-90 transition-all flex items-center gap-2"
+            >
+              <CheckCircle className="w-5 h-5" />
+              Seed Test Messages
+            </motion.button>
+          </div>
         </motion.div>
 
         {/* Users Table */}

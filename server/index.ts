@@ -7,6 +7,7 @@ import nodemailer from 'nodemailer';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import os from 'os';
 import { pool, initializeDatabase, getOrCreateConversation, logUserLogin, isUserBlocked } from './db.js';
 
 dotenv.config();
@@ -55,31 +56,50 @@ const messageLimiter = rateLimit({
   validate: { trustProxy: false },
 });
 
+// CRITICAL: Log ALL requests to debug routing issues
+app.use((req, res, next) => {
+  console.log('[BACKEND] Request received:', req.method, 'path:', req.path, 'originalUrl:', req.originalUrl, 'url:', req.url);
+  next();
+});
+
 app.use('/api/', limiter);
 app.use('/auth/', authLimiter);
 
+// CRITICAL: Declare apiRouter EARLY (before any routes that use it)
+// This allows handlers to register routes on it even if they're defined earlier
+const apiRouter = express.Router();
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'myhub-secret-key',
-  resave: false,
+  resave: true, // Changed to true to ensure session is saved on every request
   saveUninitialized: false,
   proxy: true, // Trust proxy for session cookies
+  name: 'myhub.sid', // Custom session name to avoid conflicts
   cookie: {
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    secure: false, // Set to false since tunnel handles HTTPS
+    secure: false, // Cloudflare tunnel presents as HTTP to backend, but HTTPS to browser
     httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
+    sameSite: 'lax', // Use 'lax' for same-site cookies
+    path: '/', // Keep path as root to work across all routes
   },
 }));
 app.use(passport.initialize());
 app.use(passport.session());
 
+// TEST: Route at the very top to verify routing works
+app.get('/test-top-route', (req, res) => {
+  console.log('[BACKEND] TOP TEST ROUTE MATCHED!');
+  res.json({ success: true, message: 'Top route working!' });
+});
+
 // Discord OAuth Configuration
 if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
+  const callbackURL = process.env.DISCORD_REDIRECT_URI || 'http://localhost:1500/myhub/auth/callback';
+  console.log('[Auth] Discord OAuth configured with callbackURL:', callbackURL);
   passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    callbackURL: process.env.DISCORD_REDIRECT_URI || 'http://localhost:1500/auth/callback',
+    callbackURL: callbackURL,
     scope: ['identify', 'email'],
   }, (accessToken: string, refreshToken: string, profile: any, done: any) => {
     return done(null, { profile, accessToken });
@@ -95,12 +115,14 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
 }
 
 // Nodemailer Configuration
+// Authenticate as no-reply@ if SMTP_FROM_EMAIL is set (same password), otherwise use SMTP_USER
+const smtpAuthUser = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '587'),
   secure: false,
   auth: {
-    user: process.env.SMTP_USER,
+    user: smtpAuthUser, // Authenticate as no-reply@ since password is the same
     pass: process.env.SMTP_PASS,
   },
 });
@@ -132,15 +154,51 @@ const authCallbackHandler = async (req: any, res: any) => {
       }
     }
     
-    // Save session before redirect to ensure it's persisted
-    req.session.save((err: any) => {
-      if (err) {
-        console.error('Session save error:', err);
-      }
-      res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+    // Check if already redirected to prevent loops
+    if ((req.session as any)?.authRedirected) {
+      console.log('[Auth] Already redirected, preventing loop');
+      return res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+    }
+    
+    // Mark as redirected to prevent loops
+    (req.session as any).authRedirected = true;
+    
+    // Save session synchronously before redirect
+    console.log('[Auth] Session ID:', req.sessionID);
+    console.log('[Auth] User authenticated:', req.isAuthenticated());
+    console.log('[Auth] User:', (req.user as any)?.profile?.username);
+    
+    // Manually save session and wait for it to complete
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err: any) => {
+        if (err) {
+          console.error('[Auth] Session save error:', err);
+          reject(err);
+        } else {
+          console.log('[Auth] Session saved successfully');
+          resolve();
+        }
+      });
     });
+    
+    // Set cookie explicitly
+    res.cookie('myhub.sid', req.sessionID, {
+      maxAge: 24 * 60 * 60 * 1000,
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+    });
+    console.log('[Auth] Cookie set:', req.sessionID);
+    
+    // Redirect to messages page ONCE
+    res.redirect('https://developer.epildevconnect.uk/myhub/messages');
   } catch (error) {
     console.error('Error in auth callback:', error);
+    // Clear the redirect flag on error
+    if (req.session) {
+      (req.session as any).authRedirected = false;
+    }
     res.redirect('https://developer.epildevconnect.uk/myhub/messages');
   }
 };
@@ -155,22 +213,44 @@ app.get('/myhub/auth/discord', (req, res, next) => {
   passport.authenticate('discord')(req, res, next);
 });
 
-app.get('/auth/callback', 
+app.get('/auth/callback',
+  (req, res, next) => {
+    // Check if already processed to prevent loops
+    if ((req.session as any)?.authRedirected) {
+      console.log('[Auth] Callback already processed, redirecting to messages');
+      return res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+    }
+    next();
+  },
   passport.authenticate('discord', { failureRedirect: 'https://developer.epildevconnect.uk/' }),
   (req, res, next) => {
     console.log('[Auth] Discord callback received, user:', (req.user as any)?.profile?.username);
     console.log('[Auth] Session ID:', req.sessionID);
     console.log('[Auth] Is Authenticated:', req.isAuthenticated());
-    authCallbackHandler(req, res);
+    authCallbackHandler(req, res).catch((err) => {
+      console.error('[Auth] Callback handler error:', err);
+      res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+    });
   }
 );
 app.get('/myhub/auth/callback',
+  (req, res, next) => {
+    // Check if already processed to prevent loops
+    if ((req.session as any)?.authRedirected) {
+      console.log('[Auth] Callback already processed, redirecting to messages');
+      return res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+    }
+    next();
+  },
   passport.authenticate('discord', { failureRedirect: 'https://developer.epildevconnect.uk/' }),
   (req, res, next) => {
     console.log('[Auth] Discord callback received (myhub path), user:', (req.user as any)?.profile?.username);
     console.log('[Auth] Session ID:', req.sessionID);
     console.log('[Auth] Is Authenticated:', req.isAuthenticated());
-    authCallbackHandler(req, res);
+    authCallbackHandler(req, res).catch((err) => {
+      console.error('[Auth] Callback handler error:', err);
+      res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+    });
   }
 );
 
@@ -178,6 +258,13 @@ const authUserHandler = (req: any, res: any) => {
   console.log('[Auth] /auth/user request - Session ID:', req.sessionID);
   console.log('[Auth] Is Authenticated:', req.isAuthenticated());
   console.log('[Auth] User:', req.user ? (req.user as any)?.profile?.username : 'null');
+  console.log('[Auth] Cookie header:', req.headers.cookie ? 'Present' : 'Missing');
+  
+  // Always try to save/touch session if it exists
+  if (req.session && req.sessionID) {
+    req.session.touch(); // Refresh session expiry
+    req.session.save(); // Save session changes
+  }
   
   if (req.isAuthenticated()) {
     res.json({ user: req.user });
@@ -194,9 +281,12 @@ const logoutHandler = (req: any, res: any) => {
 
 app.get('/auth/user', authUserHandler);
 app.get('/myhub/auth/user', authUserHandler);
+// Also register on /myhub/api/* path since frontend uses /myhub/api baseURL
+app.get('/myhub/api/auth/user', authUserHandler);
 
 app.post('/auth/logout', logoutHandler);
 app.post('/myhub/auth/logout', logoutHandler);
+app.post('/myhub/api/auth/logout', logoutHandler);
 
 // Middleware to check if user is admin
 const isAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -238,7 +328,7 @@ const isAuthenticated = async (req: express.Request, res: express.Response, next
 // ========================================
 
 // Get all users (admin only)
-app.get('/api/admin/users', isAdmin, async (req, res) => {
+const handleAdminUsers = async (req: express.Request, res: express.Response) => {
   try {
     const result = await pool.query(
       'SELECT user_id, user_name, user_avatar, ip_address, is_blocked, block_reason, last_login, created_at FROM users ORDER BY last_login DESC'
@@ -248,10 +338,14 @@ app.get('/api/admin/users', isAdmin, async (req, res) => {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
   }
-});
+};
+
+// Register admin users route
+app.get('/api/admin/users', isAdmin, handleAdminUsers);
+app.get('/myhub/api/admin/users', isAdmin, handleAdminUsers);
 
 // Block a user (admin only)
-app.post('/api/admin/users/:userId/block', isAdmin, async (req, res) => {
+const handleBlockUser = async (req: express.Request, res: express.Response) => {
   try {
     const { userId } = req.params;
     const { reason } = req.body;
@@ -266,10 +360,13 @@ app.post('/api/admin/users/:userId/block', isAdmin, async (req, res) => {
     console.error('Error blocking user:', error);
     res.status(500).json({ error: 'Failed to block user' });
   }
-});
+};
+
+app.post('/api/admin/users/:userId/block', isAdmin, handleBlockUser);
+app.post('/myhub/api/admin/users/:userId/block', isAdmin, handleBlockUser);
 
 // Unblock a user (admin only)
-app.post('/api/admin/users/:userId/unblock', isAdmin, async (req, res) => {
+const handleUnblockUser = async (req: express.Request, res: express.Response) => {
   try {
     const { userId } = req.params;
     
@@ -283,10 +380,13 @@ app.post('/api/admin/users/:userId/unblock', isAdmin, async (req, res) => {
     console.error('Error unblocking user:', error);
     res.status(500).json({ error: 'Failed to unblock user' });
   }
-});
+};
+
+app.post('/api/admin/users/:userId/unblock', isAdmin, handleUnblockUser);
+app.post('/myhub/api/admin/users/:userId/unblock', isAdmin, handleUnblockUser);
 
 // Delete a user and all their data (admin only)
-app.delete('/api/admin/users/:userId', isAdmin, async (req, res) => {
+const handleDeleteUser = async (req: express.Request, res: express.Response) => {
   try {
     const { userId } = req.params;
     
@@ -304,14 +404,17 @@ app.delete('/api/admin/users/:userId', isAdmin, async (req, res) => {
     console.error('Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user' });
   }
-});
+};
+
+app.delete('/api/admin/users/:userId', isAdmin, handleDeleteUser);
+app.delete('/myhub/api/admin/users/:userId', isAdmin, handleDeleteUser);
 
 // ========================================
 // CONVERSATION & MESSAGE API ENDPOINTS
 // ========================================
 
-// Get all conversations (admin sees all, users see only their own)
-app.get('/api/conversations', isAuthenticated, async (req, res) => {
+// Get all conversations handler
+const handleGetConversations = async (req: express.Request, res: express.Response) => {
   try {
     const userId = (req.user as any)?.profile?.id;
     const adminId = process.env.ADMIN_DISCORD_ID;
@@ -334,10 +437,13 @@ app.get('/api/conversations', isAuthenticated, async (req, res) => {
     console.error('Error fetching conversations:', error);
     res.status(500).json({ error: 'Failed to fetch conversations' });
   }
-});
+};
 
-// Get a specific conversation
-app.get('/api/conversations/:id', isAuthenticated, async (req, res) => {
+app.get('/api/conversations', isAuthenticated, handleGetConversations);
+app.get('/myhub/api/conversations', isAuthenticated, handleGetConversations);
+
+// Get a specific conversation handler
+const handleGetConversation = async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
     const userId = (req.user as any)?.profile?.id;
@@ -362,10 +468,13 @@ app.get('/api/conversations/:id', isAuthenticated, async (req, res) => {
     console.error('Error fetching conversation:', error);
     res.status(500).json({ error: 'Failed to fetch conversation' });
   }
-});
+};
 
-// Get messages for a conversation
-app.get('/api/conversations/:id/messages', isAuthenticated, async (req, res) => {
+app.get('/api/conversations/:id', isAuthenticated, handleGetConversation);
+app.get('/myhub/api/conversations/:id', isAuthenticated, handleGetConversation);
+
+// Get messages for a conversation handler
+const handleGetMessages = async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
     const userId = (req.user as any)?.profile?.id;
@@ -396,14 +505,30 @@ app.get('/api/conversations/:id/messages', isAuthenticated, async (req, res) => 
     console.error('Error fetching messages:', error);
     res.status(500).json({ error: 'Failed to fetch messages' });
   }
-});
+};
 
-// Send a message
-app.post('/api/conversations/:id/messages', messageLimiter, isAuthenticated, async (req, res) => {
+app.get('/api/conversations/:id/messages', isAuthenticated, handleGetMessages);
+app.get('/myhub/api/conversations/:id/messages', isAuthenticated, handleGetMessages);
+
+// Send a message handler
+const handleSendMessage = async (req: express.Request, res: express.Response) => {
   try {
+    console.log('[SendMessage] Request received, path:', req.path);
+    console.log('[SendMessage] User authenticated:', req.isAuthenticated());
+    console.log('[SendMessage] User:', (req.user as any)?.profile?.username);
+    
     const { id } = req.params;
     const { content } = req.body;
+    
+    console.log('[SendMessage] Conversation ID:', id);
+    console.log('[SendMessage] Content:', content);
+    
     const user = (req.user as any)?.profile;
+    if (!user) {
+      console.error('[SendMessage] No user in request');
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
     const userId = user?.id;
     const userName = user?.username || user?.global_name || 'Unknown';
     const userAvatar = user?.avatar ? `https://cdn.discordapp.com/avatars/${userId}/${user.avatar}.png` : null;
@@ -411,6 +536,7 @@ app.post('/api/conversations/:id/messages', messageLimiter, isAuthenticated, asy
     const isUserAdmin = userId === adminId;
 
     if (!content || content.trim() === '') {
+      console.error('[SendMessage] Empty content');
       return res.status(400).json({ error: 'Message content is required' });
     }
 
@@ -418,22 +544,28 @@ app.post('/api/conversations/:id/messages', messageLimiter, isAuthenticated, asy
     const convResult = await pool.query('SELECT * FROM conversations WHERE id = $1', [id]);
     
     if (convResult.rows.length === 0) {
+      console.error('[SendMessage] Conversation not found:', id);
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
     const conversation = convResult.rows[0];
+    console.log('[SendMessage] Conversation user_id:', conversation.user_id, 'Request userId:', userId);
 
     if (!isUserAdmin && conversation.user_id !== userId) {
+      console.error('[SendMessage] Permission denied - user mismatch');
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     // Insert message
+    console.log('[SendMessage] Inserting message...');
     const messageResult = await pool.query(
       `INSERT INTO messages (conversation_id, sender_id, sender_name, sender_avatar, content, is_admin)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [id, userId, userName, userAvatar, content, isUserAdmin]
     );
+
+    console.log('[SendMessage] Message inserted:', messageResult.rows[0].id);
 
     // Update conversation's last message
     await pool.query(
@@ -443,15 +575,21 @@ app.post('/api/conversations/:id/messages', messageLimiter, isAuthenticated, asy
       [content, id]
     );
 
+    console.log('[SendMessage] Success - returning message');
     res.json({ message: messageResult.rows[0] });
-  } catch (error) {
-    console.error('Error sending message:', error);
+  } catch (error: any) {
+    console.error('[SendMessage] Error sending message:', error?.message, error?.stack);
     res.status(500).json({ error: 'Failed to send message' });
   }
-});
+};
 
-// Create a new conversation (or get existing)
-app.post('/api/conversations', isAuthenticated, async (req, res) => {
+// Register on both app and apiRouter to ensure they're matched
+apiRouter.post('/conversations/:id/messages', messageLimiter, isAuthenticated, handleSendMessage);
+app.post('/api/conversations/:id/messages', messageLimiter, isAuthenticated, handleSendMessage);
+app.post('/myhub/api/conversations/:id/messages', messageLimiter, isAuthenticated, handleSendMessage);
+
+// Create a new conversation handler (or get existing)
+const handleCreateConversation = async (req: express.Request, res: express.Response) => {
   try {
     const user = (req.user as any)?.profile;
     const userId = user?.id;
@@ -464,69 +602,229 @@ app.post('/api/conversations', isAuthenticated, async (req, res) => {
     console.error('Error creating conversation:', error);
     res.status(500).json({ error: 'Failed to create conversation' });
   }
-});
+};
 
-// Delete a conversation (admin only)
-app.delete('/api/conversations/:id', isAdmin, async (req, res) => {
+app.post('/api/conversations', isAuthenticated, handleCreateConversation);
+app.post('/myhub/api/conversations', isAuthenticated, handleCreateConversation);
+
+// Delete a conversation handler (admin only)
+const handleDeleteConversation = async (req: express.Request, res: express.Response) => {
   try {
+    console.log('[DeleteConversation] Request received, path:', req.path);
+    console.log('[DeleteConversation] Conversation ID:', req.params.id);
+    console.log('[DeleteConversation] User authenticated:', req.isAuthenticated());
+    console.log('[DeleteConversation] Is admin:', (req.user as any)?.profile?.id === process.env.ADMIN_DISCORD_ID);
+    
     const { id } = req.params;
-
+    
+    // Delete all messages first (foreign key constraint)
+    await pool.query('DELETE FROM messages WHERE conversation_id = $1', [id]);
+    console.log('[DeleteConversation] Messages deleted');
+    
+    // Then delete the conversation
     await pool.query('DELETE FROM conversations WHERE id = $1', [id]);
+    console.log('[DeleteConversation] Conversation deleted successfully');
+    
     res.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting conversation:', error);
+  } catch (error: any) {
+    console.error('[DeleteConversation] Error:', error?.message, error?.stack);
     res.status(500).json({ error: 'Failed to delete conversation' });
   }
-});
+};
 
-// Close a conversation (admin only)
-app.patch('/api/conversations/:id/close', isAdmin, async (req, res) => {
+// Register on apiRouter as well to ensure they're matched
+apiRouter.delete('/conversations/:id', isAdmin, handleDeleteConversation);
+app.delete('/api/conversations/:id', isAdmin, handleDeleteConversation);
+app.delete('/myhub/api/conversations/:id', isAdmin, handleDeleteConversation);
+
+// Close a conversation handler (admin only)
+const handleCloseConversation = async (req: express.Request, res: express.Response) => {
   try {
+    console.log('[CloseConversation] Request received, path:', req.path);
+    console.log('[CloseConversation] Conversation ID:', req.params.id);
+    console.log('[CloseConversation] User authenticated:', req.isAuthenticated());
+    console.log('[CloseConversation] Is admin:', (req.user as any)?.profile?.id === process.env.ADMIN_DISCORD_ID);
+    
     const { id } = req.params;
-
-    await pool.query(
-      `UPDATE conversations SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-      [id]
-    );
-
+    
+    // Check if conversation uses 'status' or 'is_closed' field
+    const convCheck = await pool.query('SELECT * FROM conversations WHERE id = $1 LIMIT 1', [id]);
+    if (convCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    // Try is_closed first (more common), fallback to status
+    const hasIsClosed = 'is_closed' in convCheck.rows[0];
+    if (hasIsClosed) {
+      await pool.query(
+        `UPDATE conversations SET is_closed = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE conversations SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [id]
+      );
+    }
+    
+    console.log('[CloseConversation] Conversation closed successfully');
     res.json({ success: true });
-  } catch (error) {
-    console.error('Error closing conversation:', error);
+  } catch (error: any) {
+    console.error('[CloseConversation] Error:', error?.message, error?.stack);
     res.status(500).json({ error: 'Failed to close conversation' });
   }
-});
+};
 
-// Reopen a conversation (admin only)
-app.patch('/api/conversations/:id/reopen', isAdmin, async (req, res) => {
+// Register on apiRouter as well to ensure they're matched - MUST come before app.use('/myhub/api')
+apiRouter.patch('/conversations/:id/close', isAdmin, handleCloseConversation);
+app.patch('/api/conversations/:id/close', isAdmin, handleCloseConversation);
+app.patch('/myhub/api/conversations/:id/close', isAdmin, handleCloseConversation);
+
+// Reopen a conversation handler (admin only)
+const handleReopenConversation = async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
-
     await pool.query(
       `UPDATE conversations SET status = 'open', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [id]
     );
-
     res.json({ success: true });
   } catch (error) {
     console.error('Error reopening conversation:', error);
     res.status(500).json({ error: 'Failed to reopen conversation' });
   }
-});
+};
+
+// Register on apiRouter as well to ensure they're matched
+apiRouter.patch('/conversations/:id/reopen', isAdmin, handleReopenConversation);
+app.patch('/api/conversations/:id/reopen', isAdmin, handleReopenConversation);
+app.patch('/myhub/api/conversations/:id/reopen', isAdmin, handleReopenConversation);
+
+// Seed test messages (admin only)
+const handleSeedTestMessages = async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = (req.user as any)?.profile?.id;
+    const adminId = process.env.ADMIN_DISCORD_ID;
+    const isUserAdmin = userId === adminId;
+
+    if (!isUserAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Get or create the admin's conversation
+    const userName = (req.user as any)?.profile?.username || 'Admin';
+    const userAvatar = (req.user as any)?.profile?.avatar 
+      ? `https://cdn.discordapp.com/avatars/${userId}/${(req.user as any).profile.avatar}.png` 
+      : null;
+
+    const conversation = await getOrCreateConversation(userId, userName, userAvatar);
+
+    // Test messages to add
+    const testMessages = [
+      { content: 'Hello! This is a test message from the admin.', is_admin: true, sender_name: 'epildev' },
+      { content: 'Hi there! Testing message functionality here.', is_admin: false, sender_name: userName },
+      { content: 'Great! Can you see this message?', is_admin: true, sender_name: 'epildev' },
+      { content: 'Yes, I can see it! This is working perfectly.', is_admin: false, sender_name: userName },
+      { content: 'Excellent! Try typing a message yourself to test the send functionality.', is_admin: true, sender_name: 'epildev' },
+      { content: 'You can also test closing this conversation using the admin controls.', is_admin: true, sender_name: 'epildev' },
+    ];
+
+    const insertedMessages = [];
+    for (let i = 0; i < testMessages.length; i++) {
+      const msg = testMessages[i];
+      const minutesAgo = (testMessages.length - i) * 5; // Space messages 5 minutes apart
+      const messageResult = await pool.query(
+        `INSERT INTO messages (conversation_id, sender_id, sender_name, sender_avatar, content, is_admin, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP - INTERVAL '${minutesAgo} minutes')
+         RETURNING *`,
+        [
+          conversation.id,
+          userId, // Use same user ID for testing
+          msg.sender_name,
+          userAvatar,
+          msg.content,
+          msg.is_admin
+        ]
+      );
+      insertedMessages.push(messageResult.rows[0]);
+    }
+
+    // Update conversation's last message
+    const lastMessage = testMessages[testMessages.length - 1];
+    await pool.query(
+      `UPDATE conversations
+       SET last_message = $1, last_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [lastMessage.content, conversation.id]
+    );
+
+    res.json({ 
+      success: true, 
+      conversation: conversation,
+      messages: insertedMessages,
+      message: `Added ${insertedMessages.length} test messages to your conversation` 
+    });
+  } catch (error: any) {
+    console.error('Error seeding test messages:', error);
+    res.status(500).json({ error: 'Failed to seed test messages' });
+  }
+};
+
+app.post('/api/admin/seed-test-messages', isAuthenticated, handleSeedTestMessages);
+app.post('/myhub/api/admin/seed-test-messages', isAuthenticated, handleSeedTestMessages);
 
 // API Proxy Routes
-app.get('/api/lanyard/:userId', async (req, res) => {
+// apiRouter is already declared above - now register routes on it
+
+// Lanyard route
+const handleLanyard = async (req: express.Request, res: express.Response) => {
+  console.log('[BACKEND] Lanyard handler CALLED - userId:', req.params?.userId || 'undefined', 'path:', req.path, 'originalUrl:', req.originalUrl, 'url:', req.url);
   try {
     const { userId } = req.params;
     const response = await axios.get(`https://api.lanyard.rest/v1/users/${userId}`);
+    console.log('[BACKEND] Lanyard API success');
     res.json(response.data);
-  } catch (error) {
-    console.error('Lanyard API error:', error);
+  } catch (error: any) {
+    console.error('Lanyard API error:', error?.response?.status, error?.message);
+    // Rate limit (429) - don't treat as server error, let frontend handle gracefully
+    if (error?.response?.status === 429) {
+      return res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        message: 'Too many requests to Lanyard API. Please try again later.',
+        retryAfter: error?.response?.headers['retry-after'] || 60
+      });
+    }
+    // Network/timeout errors - return 503 (service unavailable) not 500
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable',
+        message: 'Lanyard API is currently unreachable. Using cached data.'
+      });
+    }
     res.status(500).json({ error: 'Failed to fetch Lanyard data' });
   }
+};
+
+// Register routes on router
+apiRouter.get('/lanyard/:userId', handleLanyard);
+
+// CRITICAL: Test route to verify route matching works
+app.get('/test-api-route', (req, res) => {
+  console.log('[BACKEND] TEST route matched!');
+  res.json({ test: 'route working' });
+});
+
+// Also register directly on app for /myhub/api/* paths BEFORE static middleware
+// CRITICAL: These routes MUST be defined before app.use('/myhub', ...) below
+// NOTE: System specs route is registered at the top of the file
+app.get('/myhub/api/lanyard/:userId', (req, res) => {
+  console.log('[BACKEND] DIRECT /myhub/api/lanyard route matched! path:', req.path);
+  return handleLanyard(req, res);
 });
 
 // Discord profile endpoint (badges, banner, etc.) - Official Discord API
-app.get('/api/discord/profile/:userId', async (req, res) => {
+const handleDiscordProfile = async (req: express.Request, res: express.Response) => {
+  console.log('[BACKEND] /api/discord/profile/:userId hit - userId:', req.params.userId, 'path:', req.path, 'originalUrl:', req.originalUrl);
   try {
     const { userId } = req.params;
     const botToken = process.env.DISCORD_BOT_TOKEN;
@@ -621,13 +919,32 @@ app.get('/api/discord/profile/:userId', async (req, res) => {
     };
     
     res.json(response);
-  } catch (error) {
-    console.error('Discord profile API error:', error);
+  } catch (error: any) {
+    console.error('Discord profile API error:', error?.response?.status, error?.message);
+    // Rate limit (429) - don't treat as server error
+    if (error?.response?.status === 429) {
+      return res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        message: 'Too many requests to Discord API. Please try again later.',
+        retryAfter: error?.response?.headers['retry-after'] || 60
+      });
+    }
+    // Network/timeout errors
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable',
+        message: 'Discord API is currently unreachable. Using cached data.'
+      });
+    }
     res.status(500).json({ error: 'Failed to fetch Discord profile data' });
   }
-});
+};
 
-app.get('/api/lastfm/recent', async (req, res) => {
+apiRouter.get('/discord/profile/:userId', handleDiscordProfile);
+app.get('/myhub/api/discord/profile/:userId', handleDiscordProfile);
+
+const handleLastFm = async (req: express.Request, res: express.Response) => {
+  console.log('[BACKEND] /api/lastfm/recent hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
   try {
     const username = process.env.LASTFM_USERNAME;
     const apiKey = process.env.LASTFM_API_KEY;
@@ -646,13 +963,32 @@ app.get('/api/lastfm/recent', async (req, res) => {
       },
     });
     res.json(response.data);
-  } catch (error) {
-    console.error('Last.fm API error:', error);
+  } catch (error: any) {
+    console.error('Last.fm API error:', error?.response?.status, error?.message);
+    // Rate limit (429) - don't treat as server error
+    if (error?.response?.status === 429) {
+      return res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        message: 'Too many requests to Last.fm API. Please try again later.',
+        retryAfter: error?.response?.headers['retry-after'] || 60
+      });
+    }
+    // Network/timeout errors
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable',
+        message: 'Last.fm API is currently unreachable. Using cached data.'
+      });
+    }
     res.status(500).json({ error: 'Failed to fetch Last.fm data' });
   }
-});
+};
 
-app.get('/api/wakatime/stats', async (req, res) => {
+apiRouter.get('/lastfm/recent', handleLastFm);
+app.get('/myhub/api/lastfm/recent', handleLastFm);
+
+const handleWakaTime = async (req: express.Request, res: express.Response) => {
+  console.log('[BACKEND] /api/wakatime/stats hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
   try {
     const username = process.env.WAKATIME_USERNAME;
     const apiKey = process.env.WAKATIME_API_KEY;
@@ -676,6 +1012,8 @@ app.get('/api/wakatime/stats', async (req, res) => {
     let bestDay = null;
     let bestDaySeconds = 0;
 
+    const editors: any = {};
+
     summaries.forEach((day: any) => {
       const dayTotal = day.grand_total?.total_seconds || 0;
       totalSeconds += dayTotal;
@@ -694,6 +1032,14 @@ app.get('/api/wakatime/stats', async (req, res) => {
         }
         languages[lang.name].total_seconds += lang.total_seconds || 0;
       });
+
+      // Aggregate editor data
+      day.editors?.forEach((editor: any) => {
+        if (!editors[editor.name]) {
+          editors[editor.name] = { name: editor.name, total_seconds: 0 };
+        }
+        editors[editor.name].total_seconds += editor.total_seconds || 0;
+      });
     });
 
     const languageArray = Object.values(languages)
@@ -703,6 +1049,15 @@ app.get('/api/wakatime/stats', async (req, res) => {
         total_seconds: lang.total_seconds,
         percent: totalSeconds > 0 ? Math.round((lang.total_seconds / totalSeconds) * 100 * 100) / 100 : 0,
         text: formatDuration(lang.total_seconds)
+      }));
+
+    const editorArray = Object.values(editors)
+      .sort((a: any, b: any) => b.total_seconds - a.total_seconds)
+      .map((editor: any) => ({
+        name: editor.name,
+        total_seconds: editor.total_seconds,
+        percent: totalSeconds > 0 ? Math.round((editor.total_seconds / totalSeconds) * 100 * 100) / 100 : 0,
+        text: formatDuration(editor.total_seconds)
       }));
 
     const hours = Math.floor(totalSeconds / 3600);
@@ -715,16 +1070,168 @@ app.get('/api/wakatime/stats', async (req, res) => {
         human_readable_total: humanReadableTotal,
         total_seconds: totalSeconds,
         languages: languageArray,
+        editors: editorArray,
         best_day: bestDay,
         is_coding_activity_visible: true,
         is_language_usage_visible: true,
         is_editor_usage_visible: true
       }
     });
-  } catch (error) {
-    console.error('WakaTime API error:', error);
+  } catch (error: any) {
+    console.error('WakaTime API error:', error?.response?.status, error?.message);
+    // Rate limit (429) - don't treat as server error
+    if (error?.response?.status === 429) {
+      return res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        message: 'Too many requests to WakaTime API. Please try again later.',
+        retryAfter: error?.response?.headers['retry-after'] || 60
+      });
+    }
+    // Network/timeout errors
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable',
+        message: 'WakaTime API is currently unreachable. Using cached data.'
+      });
+    }
     res.status(500).json({ error: 'Failed to fetch WakaTime data' });
   }
+};
+
+apiRouter.get('/wakatime/stats', handleWakaTime);
+app.get('/myhub/api/wakatime/stats', handleWakaTime);
+
+// System Specs endpoint - moved to be registered with other explicit routes
+// Handler definition:
+async function handleSystemSpecs(req: express.Request, res: express.Response) {
+  try {
+    console.log('[SystemSpecs] Request received, path:', req.path, 'originalUrl:', req.originalUrl);
+    
+    // VPS Specs (auto-detected)
+    const cpus = os.cpus();
+    const cpuModel = cpus.length > 0 ? cpus[0].model : 'Unknown';
+    const cpuCores = cpus.length;
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    
+    // Format memory in GB - always show 64 GB RAM for VPS
+    const formatBytes = (bytes: number) => {
+      // Always return 64 GB RAM for VPS (hardcoded as per user request)
+      return '64 GB RAM';
+    };
+    
+    // Calculate CPU usage
+    // Get initial CPU times
+    const initialCpus = os.cpus();
+    const initialTotal = initialCpus.reduce((acc, cpu) => {
+      return acc + cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.idle + cpu.times.irq;
+    }, 0);
+    const initialIdle = initialCpus.reduce((acc, cpu) => acc + cpu.times.idle, 0);
+    
+    // Wait 100ms and measure again to calculate usage
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const finalCpus = os.cpus();
+    const finalTotal = finalCpus.reduce((acc, cpu) => {
+      return acc + cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.idle + cpu.times.irq;
+    }, 0);
+    const finalIdle = finalCpus.reduce((acc, cpu) => acc + cpu.times.idle, 0);
+    
+    // Calculate CPU usage percentage
+    const totalDiff = finalTotal - initialTotal;
+    const idleDiff = finalIdle - initialIdle;
+    const cpuUsed = totalDiff - idleDiff;
+    const cpuUsagePercent = totalDiff > 0 ? ((cpuUsed / totalDiff) * 100).toFixed(1) : '0.0';
+    
+    // Detect if AMD EPYC (common in VPS)
+    const isAMDEPYC = cpuModel.includes('EPYC') || cpuModel.includes('AMD');
+    const cpuInfo = isAMDEPYC ? `${cpuCores} vCPU AMD EPYC` : `${cpuCores} vCPU ${cpuModel}`;
+    
+    const vpsSpecs = {
+      cpu: cpuInfo,
+      cpuCores: cpuCores,
+      cpuModel: cpuModel,
+      cpuUsagePercent: cpuUsagePercent,
+      ram: formatBytes(totalMem),
+      ramTotal: totalMem,
+      ramUsed: usedMem,
+      ramFree: freeMem,
+      ramUsedPercent: ((usedMem / totalMem) * 100).toFixed(1),
+      storage: process.env.VPS_STORAGE || '960 GB NVMe',
+      os: os.platform(),
+      osRelease: os.release(),
+      hostname: os.hostname(),
+      nodeVersion: process.version,
+    };
+    
+    // Mac Specs (from environment variables with defaults)
+    const macSpecs = {
+      model: process.env.MAC_MODEL || 'MacBook Pro 16-inch, 2023',
+      cpu: process.env.MAC_CPU || 'Apple M2 Max',
+      ram: process.env.MAC_RAM || '96 GB',
+      storage: process.env.MAC_STORAGE || 'Macintosh HD',
+      os: process.env.MAC_OS || 'Tahoe 26.1',
+    };
+    
+    console.log('[SystemSpecs] Returning specs:', { mac: macSpecs, vps: vpsSpecs });
+    res.json({
+      mac: macSpecs,
+      vps: vpsSpecs,
+    });
+  } catch (error: any) {
+    console.error('[SystemSpecs] Error:', error?.message, error?.stack);
+    res.status(500).json({ error: 'Failed to fetch system specs' });
+  }
+}
+
+// CRITICAL: Register routes IMMEDIATELY after handler definition (EXACT same pattern as wakatime/lastfm)
+apiRouter.get('/system/specs', handleSystemSpecs);
+// Register EXACTLY like wakatime - inline handler to ensure it works
+app.get('/myhub/api/system/specs', (req, res, next) => {
+  console.log('[SystemSpecs Route] ✅ EXPRESS MATCHED!');
+  return handleSystemSpecs(req, res).catch(next);
+});
+
+// CRITICAL: Register explicit /myhub/api/* routes BEFORE app.all to ensure they match first
+app.get('/myhub/api/auth/user', authUserHandler);
+app.post('/myhub/api/auth/logout', logoutHandler);
+// Note: handleContactEmail route registered after function definition below
+
+// CRITICAL: Mount API router for /api/* paths
+app.use('/api', apiRouter);
+
+// CRITICAL: Handle /myhub/api/* routes - forward to apiRouter (catch-all, must be LAST)
+app.all('/myhub/api/*', (req, res, next) => {
+  console.log('[app.all] ✅ CALLED! path:', req.path, 'originalUrl:', req.originalUrl);
+  // Handle system specs FIRST - direct call since explicit route isn't matching
+  if (req.path === '/myhub/api/system/specs' || req.originalUrl === '/myhub/api/system/specs' ||
+      req.path.includes('system/specs') || req.originalUrl.includes('system/specs')) {
+    console.log('[app.all] ✅ System specs matched, calling handler');
+    return handleSystemSpecs(req, res).catch(next);
+  }
+  
+  // For all other routes, modify url and forward to apiRouter
+  const originalUrl = req.url;
+  const originalOriginalUrl = req.originalUrl;
+  
+  // Strip /myhub/api from url
+  req.url = req.url.replace('/myhub/api', '') || '/';
+  if (req.originalUrl) {
+    const modifiedOriginalUrl = req.originalUrl.replace('/myhub/api', '') || '/';
+    (req as any).originalUrl = modifiedOriginalUrl;
+  }
+  
+  // Forward to apiRouter
+  apiRouter(req, res, (err) => {
+    // Restore original values
+    req.url = originalUrl;
+    (req as any).originalUrl = originalOriginalUrl;
+    if (err) {
+      console.log('[app.all /myhub/api/*] apiRouter error:', err);
+    }
+    next(err);
+  });
 });
 
 function formatDuration(seconds: number): string {
@@ -745,12 +1252,13 @@ app.post('/api/contact/discord', async (req, res) => {
     const { message } = req.body;
     const user: any = req.user;
     
-    // Send DM via Discord (requires bot setup or webhook)
-    // For now, we'll send an email notification
-    await transporter.sendMail({
-      from: process.env.SMTP_USER,
-      to: process.env.SMTP_USER,
-      subject: `MY HUB Contact from ${user.profile.username}`,
+        // Send DM via Discord (requires bot setup or webhook)
+        // For now, we'll send an email notification
+        const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+        await transporter.sendMail({
+          from: fromEmail, // Plain email address
+          to: process.env.SMTP_USER,
+          subject: `MY HUB Contact from ${user.profile.username}`,
       text: `Message from Discord user ${user.profile.username}#${user.profile.discriminator}:\n\n${message}`,
       html: `
         <h3>Message from Discord user ${user.profile.username}#${user.profile.discriminator}</h3>
@@ -765,17 +1273,32 @@ app.post('/api/contact/discord', async (req, res) => {
   }
 });
 
-app.post('/api/contact/email', async (req, res) => {
+const handleContactEmail = async (req: express.Request, res: express.Response) => {
   try {
+    console.log('[ContactEmail] Request received, path:', req.path, 'originalUrl:', req.originalUrl);
     const { name, email, subject, message } = req.body;
 
     if (!name || !email || !subject || !message) {
+      console.log('[ContactEmail] Missing required fields');
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Send email to site owner (Blake)
+    // Check if SMTP is configured
+    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.error('[ContactEmail] SMTP not configured - missing environment variables');
+      return res.status(500).json({ 
+        error: 'Email service not configured',
+        details: 'SMTP settings are missing. Please contact the administrator.'
+      });
+    }
+
+    // Send email to site owner (Blake) - This is critical, must succeed
+    const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+    console.log(`[ContactEmail] Notification - FROM: ${fromEmail}, Auth User: ${smtpAuthUser}, TO: ${process.env.SMTP_USER}`);
+    console.log(`[ContactEmail] SMTP Config - Host: ${process.env.SMTP_HOST}, Port: ${process.env.SMTP_PORT || '587'}`);
+    
     await transporter.sendMail({
-      from: process.env.SMTP_USER,
+      from: fromEmail, // Plain email address - no display name
       to: process.env.SMTP_USER,
       replyTo: email,
       subject: `MY HUB Contact: ${subject} (from ${name})`,
@@ -790,10 +1313,14 @@ app.post('/api/contact/email', async (req, res) => {
       `,
     });
 
-    // Send confirmation email to sender
-    await transporter.sendMail({
-      from: process.env.SMTP_USER,
+    console.log('[ContactEmail] Notification email sent successfully');
+
+    // Send confirmation email to sender - This is non-critical, don't fail the request if it fails
+    console.log(`[ContactEmail] Confirmation - FROM: ${fromEmail}, Auth User: ${smtpAuthUser}, TO: ${email}, REPLY-TO: ${process.env.SMTP_USER}`);
+    const mailOptions: any = {
+      from: fromEmail, // Plain email address - no display name
       to: email,
+      replyTo: process.env.SMTP_USER, // When user replies, it goes to connectwithme@epildevconnect.uk
       subject: `Re: ${subject}`,
       text: `Hi ${name},\n\nThank you for reaching out! I've received your message regarding "${subject}" and will get back to you as soon as possible.\n\nYour message:\n${message}\n\nBest regards,\nBlake (@epildev)\nMY HUB - EpilDevConnect`,
       html: `
@@ -872,26 +1399,77 @@ app.post('/api/contact/email', async (req, res) => {
           </body>
         </html>
       `,
+    };
+    
+    // Send confirmation email, but don't fail the request if it fails
+    transporter.sendMail(mailOptions).catch((confirmationError) => {
+      console.error('[ContactEmail] Confirmation email failed (non-critical):', confirmationError?.message);
     });
 
+    console.log('[ContactEmail] Success - returning response');
     res.json({ success: true });
-  } catch (error) {
-    console.error('Email error:', error);
-    res.status(500).json({ error: 'Failed to send email' });
+  } catch (error: any) {
+    console.error('[ContactEmail] Error:', error?.message);
+    console.error('[ContactEmail] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      command: error?.command,
+      response: error?.response,
+      responseCode: error?.responseCode,
+      responseMessage: error?.responseMessage,
+      stack: error?.stack,
+    });
+    res.status(500).json({ 
+      error: 'Failed to send email',
+      details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+    });
   }
-});
+};
+
+// Register email route AFTER function definition
+app.post('/myhub/api/contact/email', handleContactEmail);
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Global error handler (must be last)
-// Serve static frontend files at /myhub path
-app.use('/myhub', express.static('dist'));
+// CRITICAL: Serve static files ONLY for non-API paths
+// Use a more restrictive path pattern that excludes /api and /auth
+// CRITICAL: This middleware MUST run AFTER all API routes
+app.use('/myhub', (req, res, next) => {
+  // CRITICAL: Skip static file serving for API/auth paths
+  // Check both req.path AND req.originalUrl to catch all API paths
+  const path = req.path;
+  const originalUrl = req.originalUrl;
+  const isApiPath = (path && (path.startsWith('/api') || path.startsWith('/auth'))) ||
+                    (originalUrl && (originalUrl.startsWith('/myhub/api') || originalUrl.startsWith('/myhub/auth') ||
+                                    originalUrl.startsWith('/api') || originalUrl.startsWith('/auth')));
+  
+  if (isApiPath) {
+    console.log('[BACKEND] Static middleware skipping API path:', path, 'originalUrl:', originalUrl);
+    return next(); // Let API route handlers deal with it (should have already, but safety check)
+  }
+  // Serve static files for other /myhub/* paths (frontend pages only)
+  const staticHandler = express.static('dist');
+  staticHandler(req, res, next);
+});
 
-// Handle client-side routing - send index.html for /myhub routes
-app.get('/myhub/*', (req, res) => {
+// Handle client-side routing - send index.html for /myhub routes (but not /myhub/api/* or /myhub/auth/*)
+// CRITICAL: This MUST come AFTER all API/auth routes to avoid intercepting them
+app.get('/myhub/*', (req, res, next) => {
+  // CRITICAL: Double-check - skip API/auth paths even though they should have been handled above
+  const path = req.path;
+  const originalUrl = req.originalUrl;
+  const isApiOrAuth = (path && (path.startsWith('/myhub/api') || path.startsWith('/myhub/auth') ||
+                                path.startsWith('/api') || path.startsWith('/auth'))) ||
+                      (originalUrl && (originalUrl.startsWith('/myhub/api') || originalUrl.startsWith('/myhub/auth') ||
+                                      originalUrl.startsWith('/api') || originalUrl.startsWith('/auth')));
+  
+  if (isApiOrAuth) {
+    console.log('[BACKEND] Client-side routing skipping API/auth path:', path, 'originalUrl:', originalUrl);
+    return next(); // Let API routes or 404 handler deal with it
+  }
   res.sendFile('index.html', { root: 'dist' });
 });
 

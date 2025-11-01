@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import Layout from './components/Layout';
 import BootSequence from './components/BootSequence';
@@ -7,6 +7,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Home from './sections/Home';
 import Projects from './sections/Projects';
 import TechStack from './sections/TechStack';
+import SystemSpecs from './sections/SystemSpecs';
 import Experience from './sections/Experience';
 import CodeViewer from './sections/CodeViewer';
 import Contact from './sections/Contact';
@@ -51,10 +52,17 @@ function App() {
       <Layout>
         <AnimatePresence mode="wait">
           <Routes>
+            {/* Redirect old auth paths to /myhub/auth/* */}
+            <Route path="/auth/discord" element={<Navigate to="/myhub/auth/discord" replace />} />
+            <Route path="/auth/callback" element={<Navigate to="/myhub/auth/callback" replace />} />
+            <Route path="/auth/user" element={<Navigate to="/myhub/auth/user" replace />} />
+            <Route path="/auth/logout" element={<Navigate to="/myhub/auth/logout" replace />} />
+            
             <Route path="/" element={<Home />} />
             <Route path="/home" element={<Home />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/tech-stack" element={<TechStack />} />
+            <Route path="/system-specs" element={<SystemSpecs />} />
             <Route path="/experience" element={<Experience />} />
             <Route path="/code-viewer" element={<CodeViewer />} />
             <Route path="/contact" element={<Contact />} />

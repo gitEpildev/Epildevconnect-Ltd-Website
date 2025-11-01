@@ -14,10 +14,11 @@ export default function Home() {
   const uptime = useUptime();
 
   // Poll APIs at reasonable intervals to avoid rate limiting
-  const lanyard = usePolling(() => fetchLanyardData(DISCORD_USER_ID), 5000); // Every 5 seconds
-  const lastfm = usePolling(() => fetchLastFmData(), 10000); // Every 10 seconds
-  const wakatime = usePolling(() => fetchWakaTimeData(), 30000); // Every 30 seconds
-  const discordProfile = usePolling(() => fetchDiscordProfile(DISCORD_USER_ID), 60000); // Every 60 seconds
+  // persistOnError: true keeps showing last known data when offline
+  const lanyard = usePolling(() => fetchLanyardData(DISCORD_USER_ID), 10000, true, true); // Every 10 seconds
+  const lastfm = usePolling(() => fetchLastFmData(), 10000, true, true); // Every 10 seconds
+  const wakatime = usePolling(() => fetchWakaTimeData(), 30000, true, true); // Every 30 seconds
+  const discordProfile = usePolling(() => fetchDiscordProfile(DISCORD_USER_ID), 30000, true, true); // Every 30 seconds
 
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
@@ -61,8 +62,10 @@ export default function Home() {
               data={lanyard.data}
               profileData={discordProfile.data}
               isLoading={lanyard.isLoading}
+              profileIsLoading={discordProfile.isLoading}
               error={lanyard.error}
               hideDetails={isIdle}
+              isOffline={lanyard.isOffline}
             />
           </motion.div>
 
@@ -78,6 +81,7 @@ export default function Home() {
               isLoading={lastfm.isLoading}
               error={lastfm.error}
               hideDetails={isIdle}
+              isOffline={lastfm.isOffline}
             />
           </motion.div>
 
@@ -92,6 +96,7 @@ export default function Home() {
               data={wakatime.data}
               isLoading={wakatime.isLoading}
               error={wakatime.error}
+              isOffline={wakatime.isOffline}
             />
           </motion.div>
         </div>

@@ -9,11 +9,11 @@ services:
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB:-myhub_db}
+      - POSTGRES_DB=${POSTGRES_DB:-myhub}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-1800}:5432"  # External port 1800, internal 5432
+      - "${POSTGRES_PORT:-1800}:5432"  # External port from .env (default 1800), internal 5432
     networks:
       - myhub-network
     healthcheck:
@@ -52,18 +52,39 @@ services:
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
       - SESSION_SECRET=${SESSION_SECRET}
       - POSTGRES_HOST=localhost
-      - POSTGRES_PORT=1800
+      - POSTGRES_PORT=${POSTGRES_PORT:-1800}
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB:-myhub_db}
+      - POSTGRES_DB=${POSTGRES_DB:-myhub}
     healthcheck:
       test: [ "CMD", "node", "-e", "require('http').get('http://localhost:1600/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # Cloudflare Tunnel (cloudflared)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: myhub-cloudflared
+    restart: unless-stopped
+    network_mode: "host"
+    depends_on:
+      myhub:
+        condition: service_healthy
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiYzM3YWM5NWI4ZmIyYjg0YjA3NDRhM2VjYTI4NDhiNWIiLCJzIjoiWG1GcEdUY200YnhZMkp1dHlKR1JpMlNsTlltRUJIL0VNQ2dzNFVuV0xyTT0iLCJ0IjoiMTQzZGU2NTYtM2VkYy00Y2ZlLTk0NjMtNTBmYjZiMzU0MzE4In0=
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflare-tunnel-config.yml:/etc/cloudflared/config.yml:ro
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   myhub-network:

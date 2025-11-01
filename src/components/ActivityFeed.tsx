@@ -73,8 +73,22 @@ export default function ActivityFeed({
   // WakaTime Activity
   if (wakatimeData?.data) {
     const stats = wakatimeData.data;
-    const topLanguage = stats.languages?.[0];
     
+    // Always show Cursor if it's in the editors list
+    const cursorEditor = stats.editors?.find((editor: any) => 
+      editor.name.toLowerCase() === 'cursor'
+    );
+    
+    if (cursorEditor) {
+      activities.push({
+        icon: Code2,
+        text: `Using Cursor (${cursorEditor.text})`,
+        color: 'text-cyan-400',
+      });
+    }
+    
+    // Show top language
+    const topLanguage = stats.languages?.[0];
     if (topLanguage) {
       activities.push({
         icon: Code2,
@@ -134,9 +148,9 @@ export default function ActivityFeed({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="text-gray-500 text-sm text-center py-4"
+            className="text-gray-500 text-sm text-center py-4 italic"
           >
-            No recent activity
+            {hideDetails ? 'Activity hidden (idle mode)' : 'Waiting for activity updates...'}
           </motion.div>
         )}
       </AnimatePresence>
