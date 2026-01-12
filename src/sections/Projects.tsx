@@ -1,28 +1,52 @@
 import { motion } from 'framer-motion';
-import { ExternalLink, Github, FolderGit2 } from 'lucide-react';
+import { ExternalLink, Github, FolderGit2, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { fetchGitHubRepos } from '../utils/api';
 
-const projects = [
-  {
-    id: 1,
-    title: 'MY HUB',
-    description: 'Real-time personal dashboard with live API integrations featuring Discord presence, Last.fm music tracking, and WakaTime coding stats',
-    tech: ['React', 'TypeScript', 'Tailwind CSS', 'Node.js', 'Express', 'Framer Motion'],
-    github: 'https://github.com/BlakeMcBride1625/MyLink',
-    demo: 'https://developer.epildevconnect.uk/myhub/',
-    featured: true,
-  },
-  {
-    id: 2,
-    title: '8BP Rewards V3',
-    description: 'Rewards system application built with modern web technologies',
-    tech: ['React', 'TypeScript', 'Node.js'],
-    github: 'https://github.com/BlakeMcBride1625/8bp-rewards-v3',
-    demo: '#',
-    featured: true,
-  },
-];
+interface Project {
+  id: number;
+  title: string;
+  description: string;
+  tech: string[];
+  github: string;
+  demo: string;
+  featured?: boolean;
+  updatedAt?: string;
+  stars?: number;
+  forks?: number;
+}
 
 export default function Projects() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const data = await fetchGitHubRepos();
+        if (data && data.projects && Array.isArray(data.projects)) {
+          setProjects(data.projects);
+        } else {
+          setProjects([]);
+        }
+      } catch (err: any) {
+        console.error('[Projects] Failed to load projects:', err);
+        setError(err.response?.data?.message || 'Failed to load projects');
+        // Keep empty array on error - don't show fallback projects
+        setProjects([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadProjects();
+    // Refresh every 5 minutes
+    const interval = setInterval(loadProjects, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
@@ -45,8 +69,27 @@ export default function Projects() {
         </motion.div>
 
         {/* Projects Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {projects.map((project, index) => (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-8 h-8 text-quantum-glow animate-spin" />
+              <p className="text-gray-400 font-mono">Loading projects from GitHub...</p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <p className="text-red-400 font-mono mb-2">Error loading projects</p>
+              <p className="text-gray-500 text-sm font-mono">{error}</p>
+            </div>
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="flex items-center justify-center py-20">
+            <p className="text-gray-400 font-mono">No projects found</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {projects.map((project, index) => (
             <motion.div
               key={project.id}
               initial={{ opacity: 0, y: 20 }}
@@ -101,8 +144,9 @@ export default function Projects() {
                 </a>
               </div>
             </motion.div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

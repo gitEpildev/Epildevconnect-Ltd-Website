@@ -6,6 +6,9 @@ interface SystemUptimeProps {
 }
 
 export default function SystemUptime({ uptime }: SystemUptimeProps) {
+  // Safety check - ensure uptime is always a string
+  const displayUptime = uptime || '00:00:00';
+  
   return (
     <motion.div
       layout
@@ -18,7 +21,7 @@ export default function SystemUptime({ uptime }: SystemUptimeProps) {
           </div>
           <div>
             <p className="text-xs text-gray-400 font-mono">SYSTEM UPTIME</p>
-            <p className="text-xl font-mono font-bold text-quantum-glow">{uptime}</p>
+            <p className="text-xl font-mono font-bold text-quantum-glow">{displayUptime}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

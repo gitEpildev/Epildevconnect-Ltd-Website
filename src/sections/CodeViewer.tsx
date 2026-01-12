@@ -1,145 +1,93 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Code2, Copy, Check, Github, ExternalLink } from 'lucide-react';
+import { Code2, Copy, Check, Github, ExternalLink, Loader2 } from 'lucide-react';
 import { Highlight, themes } from 'prism-react-renderer';
+import { fetchGitHubCodeSnippets } from '../utils/api';
 
-const codeExamples = [
-  {
-    id: 1,
-    title: '8BP Rewards - Puppeteer Browser Setup',
-    language: 'typescript',
-    code: `import puppeteer, { Browser, Page } from 'puppeteer';
-import * as cron from 'node-cron';
-import { config } from './config';
-import { Logger } from './logger';
-
-export class EightBallPoolClaimer {
-  private browser: Browser | null = null;
-  private logger: Logger;
-
-  constructor() {
-    this.logger = new Logger();
-  }
-
-  private async setupBrowser(): Promise<Browser> {
-    this.logger.info('Setting up browser...');
-    
-    const browser = await puppeteer.launch({
-      headless: config.headless ? "new" : false,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--window-size=1920,1080',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-      ],
-      timeout: 60000,
-      protocolTimeout: 60000
-    });
-
-    this.logger.info('Browser setup complete');
-    return browser;
-  }
-}`,
-  },
-  {
-    id: 2,
-    title: '8BP Rewards - Discord Bot Service',
-    language: 'javascript',
-    code: `const DiscordService = require('./services/discord-service');
-const express = require('express');
-const cors = require('cors');
-const dotenv = require('dotenv');
-
-dotenv.config();
-
-class DiscordBot {
-  constructor() {
-    this.discordService = new DiscordService();
-    this.app = express();
-    this.port = process.env.DISCORD_API_PORT || 2700;
-    
-    this.setupApiServer();
-  }
-
-  setupApiServer() {
-    this.app.use(cors());
-    this.app.use(express.json());
-    
-    // Health check
-    this.app.get('/health', (req, res) => {
-      res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        discordReady: this.discordService.isReady
-      });
-    });
-
-    // Get bot status
-    this.app.get('/api/bot-status', async (req, res) => {
-      try {
-        const status = await this.discordService.getBotStatus();
-        res.json(status);
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
-      }
-    });
-  }
-}`,
-  },
-  {
-    id: 3,
-    title: '8BP Rewards - Configuration System',
-    language: 'typescript',
-    code: `import dotenv from 'dotenv';
-
-dotenv.config();
-
-export interface Config {
-  userIds: string[];
-  shopUrl: string;
-  headless: boolean;
-  timeout: number;
-  delayBetweenUsers: number;
+interface CodeSnippet {
+  id: string;
+  title: string;
+  language: string;
+  code: string;
+  repo?: string;
+  path?: string;
+  fullUrl?: string;
 }
 
-export const config: Config = {
-  userIds: getUserIdList(),
-  shopUrl: process.env.SHOP_URL || 'https://8ballpool.com/en/shop',
-  headless: process.env.HEADLESS === 'true',
-  timeout: parseInt(process.env.TIMEOUT || '30000', 10),
-  delayBetweenUsers: parseInt(process.env.DELAY_BETWEEN_USERS || '5000', 10)
-};
-
-function getUserIdList(): string[] {
-  const userIds = process.env.USER_IDS;
-  const singleUserId = process.env.USER_ID;
-  
-  if (userIds) {
-    return userIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
-  } else if (singleUserId) {
-    return [singleUserId.trim()];
-  } else {
-    return ['1826254746'];
-  }
-}`,
-  },
-];
-
 export default function CodeViewer() {
-  const [selectedExample, setSelectedExample] = useState(codeExamples[0]);
+  const [codeExamples, setCodeExamples] = useState<CodeSnippet[]>([]);
+  const [selectedExample, setSelectedExample] = useState<CodeSnippet | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadCodeSnippets = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const data = await fetchGitHubCodeSnippets();
+        if (data && data.snippets && Array.isArray(data.snippets)) {
+          setCodeExamples(data.snippets);
+          if (data.snippets.length > 0) {
+            setSelectedExample(data.snippets[0]);
+          }
+        } else {
+          setCodeExamples([]);
+        }
+      } catch (err: any) {
+        console.error('[CodeViewer] Failed to load code snippets:', err);
+        setError(err.response?.data?.message || 'Failed to load code snippets');
+        setCodeExamples([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCodeSnippets();
+  }, []);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(selectedExample.code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (selectedExample) {
+      await navigator.clipboard.writeText(selectedExample.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-center py-20">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-8 h-8 text-quantum-glow animate-spin" />
+              <p className="text-gray-400 font-mono">Loading code snippets from GitHub...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || codeExamples.length === 0) {
+    return (
+      <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <p className="text-red-400 font-mono mb-2">Error loading code snippets</p>
+              <p className="text-gray-500 text-sm font-mono">{error || 'No code snippets found'}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selectedExample) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
@@ -162,7 +110,7 @@ export default function CodeViewer() {
           </p>
           <div className="flex gap-4">
             <a
-              href="https://github.com/BlakeMcBride1625/8bp-rewards-v3"
+              href="https://github.com/BlakeMcBride1625/8bp-rewards-4.3.2"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-4 py-2 glass glass-hover rounded-xl font-mono text-sm"
@@ -214,26 +162,51 @@ export default function CodeViewer() {
                     <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                     <div className="w-3 h-3 rounded-full bg-green-500"></div>
                   </div>
-                  <span className="font-mono text-sm text-gray-400">
-                    {selectedExample.title}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="font-mono text-sm text-gray-400">
+                      {selectedExample.title}
+                    </span>
+                    {selectedExample.fullUrl && (
+                      <a
+                        href={selectedExample.fullUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-gray-500 hover:text-quantum-glow transition-colors"
+                      >
+                        View on GitHub →
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={handleCopy}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-white bg-opacity-5 hover:bg-opacity-10 rounded-lg transition-all text-sm font-mono"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-4 h-4 text-green-400" />
-                      <span className="text-green-400">Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>Copy</span>
-                    </>
+                <div className="flex items-center gap-2">
+                  {selectedExample.fullUrl && (
+                    <a
+                      href={selectedExample.fullUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white bg-opacity-5 hover:bg-opacity-10 rounded-lg transition-all text-sm font-mono"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>View File</span>
+                    </a>
                   )}
-                </button>
+                  <button
+                    onClick={handleCopy}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white bg-opacity-5 hover:bg-opacity-10 rounded-lg transition-all text-sm font-mono"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-4 h-4 text-green-400" />
+                        <span className="text-green-400">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Code Content */}
@@ -241,7 +214,7 @@ export default function CodeViewer() {
                 <Highlight
                   theme={themes.nightOwl}
                   code={selectedExample.code}
-                  language={selectedExample.language as any}
+                  language={(selectedExample.language.toLowerCase() === 'tsx' ? 'tsx' : selectedExample.language.toLowerCase()) as any}
                 >
                   {({ className, style, tokens, getLineProps, getTokenProps }) => (
                     <pre className={`${className} text-sm`} style={style} suppressHydrationWarning>

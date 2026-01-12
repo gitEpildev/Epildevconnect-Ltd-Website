@@ -8,12 +8,17 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import os from 'os';
-import { pool, initializeDatabase, getOrCreateConversation, logUserLogin, isUserBlocked } from './db.js';
+import { Client, GatewayIntentBits } from 'discord.js';
+import { pool, initializeDatabase, getOrCreateConversation, logUserLogin, isUserBlocked, getProjectDescription, saveProjectDescription } from './db.js';
+import { generateProjectDescription, isPlaceholderDescription } from './services/openai.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.BACKEND_PORT || 1600;
+
+// Discord Bot Client (declared early so routes can use it)
+let discordBot: Client | null = null;
 
 // Trust proxy - Required for Cloudflare Tunnel
 app.set('trust proxy', true);
@@ -68,6 +73,56 @@ app.use('/auth/', authLimiter);
 // CRITICAL: Declare apiRouter EARLY (before any routes that use it)
 // This allows handlers to register routes on it even if they're defined earlier
 const apiRouter = express.Router();
+
+// Simple in-memory cache for GitHub API responses (to reduce rate limiting)
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+  ttl: number; // Time to live in milliseconds
+}
+
+const githubCache = new Map<string, CacheEntry>();
+const GITHUB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+
+function getCached(key: string): any | null {
+  const entry = githubCache.get(key);
+  if (!entry) return null;
+  
+  const now = Date.now();
+  if (now - entry.timestamp > entry.ttl) {
+    githubCache.delete(key);
+    return null;
+  }
+  
+  return entry.data;
+}
+
+function setCached(key: string, data: any, ttl: number = GITHUB_CACHE_TTL): void {
+  githubCache.set(key, {
+    data,
+    timestamp: Date.now(),
+    ttl
+  });
+}
+
+function clearCache(pattern?: string): number {
+  if (!pattern) {
+    const count = githubCache.size;
+    githubCache.clear();
+    console.log(`[BACKEND] Cleared all ${count} cache entries`);
+    return count;
+  }
+  
+  let count = 0;
+  for (const key of githubCache.keys()) {
+    if (key.includes(pattern)) {
+      githubCache.delete(key);
+      count++;
+    }
+  }
+  console.log(`[BACKEND] Cleared ${count} cache entries matching "${pattern}"`);
+  return count;
+}
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'myhub-secret-key',
@@ -556,6 +611,13 @@ const handleSendMessage = async (req: express.Request, res: express.Response) =>
       return res.status(403).json({ error: 'Forbidden' });
     }
 
+    // Check if this is the first message in the conversation (for non-admin users)
+    const messageCountResult = await pool.query(
+      'SELECT COUNT(*) as count FROM messages WHERE conversation_id = $1',
+      [id]
+    );
+    const isFirstMessage = parseInt(messageCountResult.rows[0].count) === 0;
+
     // Insert message
     console.log('[SendMessage] Inserting message...');
     const messageResult = await pool.query(
@@ -574,6 +636,28 @@ const handleSendMessage = async (req: express.Request, res: express.Response) =>
        WHERE id = $2`,
       [content, id]
     );
+
+    // Send Discord DM notification when a non-admin user sends their first message
+    if (!isUserAdmin && isFirstMessage && discordBot && discordBot.user) {
+      try {
+        const adminUserId = process.env.ADMIN_DISCORD_ID;
+        if (adminUserId) {
+          const adminUser = await discordBot.users.fetch(adminUserId);
+          const conversationUrl = `https://developer.epildevconnect.uk/myhub/messages`;
+          await adminUser.send(
+            `💬 **New Message in Conversation**\n\n` +
+            `**From:** ${userName} (${userId})\n` +
+            `**Conversation ID:** ${id}\n` +
+            `**Message:** ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}\n\n` +
+            `**View:** ${conversationUrl}`
+          );
+          console.log(`[Discord] Sent new message notification from ${userName}`);
+        }
+      } catch (dmError: any) {
+        console.error('[Discord] Failed to send new message notification:', dmError.message);
+        // Don't fail the request if Discord DM fails
+      }
+    }
 
     console.log('[SendMessage] Success - returning message');
     res.json({ message: messageResult.rows[0] });
@@ -595,8 +679,32 @@ const handleCreateConversation = async (req: express.Request, res: express.Respo
     const userId = user?.id;
     const userName = user?.username || user?.global_name || 'Unknown';
     const userAvatar = user?.avatar ? `https://cdn.discordapp.com/avatars/${userId}/${user.avatar}.png` : null;
+    const adminId = process.env.ADMIN_DISCORD_ID;
+    const isUserAdmin = userId === adminId;
 
-    const conversation = await getOrCreateConversation(userId, userName, userAvatar);
+    const { conversation, isNew } = await getOrCreateConversation(userId, userName, userAvatar);
+    
+    // Send Discord DM notification when a NEW conversation is created by a non-admin user
+    if (isNew && !isUserAdmin && discordBot && discordBot.user) {
+      try {
+        if (adminId) {
+          const adminUser = await discordBot.users.fetch(adminId);
+          const conversationUrl = `https://developer.epildevconnect.uk/myhub/messages`;
+          await adminUser.send(
+            `🔔 **New Conversation Started**\n\n` +
+            `**User:** ${userName} (${userId})\n` +
+            `**Conversation ID:** ${conversation.id}\n` +
+            `**View:** ${conversationUrl}\n\n` +
+            `A new help request has been created. Check your admin panel to respond.`
+          );
+          console.log(`[Discord] Sent new conversation notification for user ${userName}`);
+        }
+      } catch (dmError: any) {
+        console.error('[Discord] Failed to send new conversation notification:', dmError.message);
+        // Don't fail the request if Discord DM fails
+      }
+    }
+    
     res.json({ conversation });
   } catch (error) {
     console.error('Error creating conversation:', error);
@@ -717,7 +825,7 @@ const handleSeedTestMessages = async (req: express.Request, res: express.Respons
       ? `https://cdn.discordapp.com/avatars/${userId}/${(req.user as any).profile.avatar}.png` 
       : null;
 
-    const conversation = await getOrCreateConversation(userId, userName, userAvatar);
+    const { conversation } = await getOrCreateConversation(userId, userName, userAvatar);
 
     // Test messages to add
     const testMessages = [
@@ -1101,6 +1209,599 @@ const handleWakaTime = async (req: express.Request, res: express.Response) => {
 apiRouter.get('/wakatime/stats', handleWakaTime);
 app.get('/myhub/api/wakatime/stats', handleWakaTime);
 
+// GitHub repositories endpoint
+const handleGitHubRepos = async (req: express.Request, res: express.Response) => {
+  console.log('[BACKEND] /api/github/repos hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
+  
+  // Check cache first
+  const cacheKey = 'github_repos';
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log('[BACKEND] Returning cached GitHub repos data');
+    return res.json(cached);
+  }
+  
+  try {
+    const githubUsername = process.env.GITHUB_USERNAME || 'BlakeMcBride1625';
+    const githubToken = process.env.GITHUB_TOKEN; // Optional, for higher rate limits
+    
+    if (!githubToken) {
+      console.warn('[BACKEND] ⚠️ GITHUB_TOKEN not set! Rate limits will be lower (60 requests/hour vs 5000/hour with token)');
+    }
+    
+    const headers: any = {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'MY-HUB-Dashboard/1.0'
+    };
+    
+    // Topics endpoint requires different Accept header
+    const topicsHeaders: any = {
+      'Accept': 'application/vnd.github.mercy-preview+json',
+      'User-Agent': 'MY-HUB-Dashboard/1.0'
+    };
+    
+    if (githubToken) {
+      headers['Authorization'] = `token ${githubToken}`;
+      topicsHeaders['Authorization'] = `token ${githubToken}`;
+    }
+    
+    // Fetch public repositories
+    const response = await axios.get(
+      `https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=100&type=public`,
+      { headers }
+    );
+    
+    const repos = response.data || [];
+    console.log(`[BACKEND] Fetched ${repos.length} repositories from GitHub`);
+    
+    // Fetch topics and languages for each repository (GitHub API requires separate calls)
+    // Add small delay between requests to avoid rate limiting
+    const reposWithTopics = await Promise.all(
+      repos.map(async (repo: any, index: number) => {
+        // Add delay to avoid hitting rate limits too quickly
+        if (index > 0 && index % 5 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay every 5 repos
+        }
+        
+        try {
+          // Check cache for topics
+          const topicsCacheKey = `github_topics_${repo.name}`;
+          let topics = getCached(topicsCacheKey);
+          
+          if (!topics) {
+            const topicsResponse = await axios.get(
+              `https://api.github.com/repos/${githubUsername}/${repo.name}/topics`,
+              { headers: topicsHeaders }
+            );
+            topics = topicsResponse.data?.names || [];
+            setCached(topicsCacheKey, topics);
+          }
+          
+          repo.topics = topics;
+          if (repo.topics.length > 0) {
+            console.log(`[BACKEND] Repo ${repo.name} has topics:`, repo.topics.join(', '));
+          }
+        } catch (err: any) {
+          // If topics fetch fails, continue without topics
+          if (err?.response?.status === 403 || err?.response?.status === 429) {
+            console.warn(`[BACKEND] Rate limited while fetching topics for ${repo.name}`);
+          } else {
+            console.warn(`[BACKEND] Failed to fetch topics for ${repo.name}:`, err?.response?.status || err?.message);
+          }
+          repo.topics = [];
+        }
+        
+        try {
+          // Check cache for languages
+          const languagesCacheKey = `github_languages_${repo.name}`;
+          let languages = getCached(languagesCacheKey);
+          
+          if (!languages) {
+            const languagesResponse = await axios.get(
+              `https://api.github.com/repos/${githubUsername}/${repo.name}/languages`,
+              { headers }
+            );
+            languages = languagesResponse.data || {};
+            setCached(languagesCacheKey, languages);
+          }
+          
+          repo.languages = languages;
+          const languageNames = Object.keys(repo.languages);
+          if (languageNames.length > 0) {
+            console.log(`[BACKEND] Repo ${repo.name} has languages:`, languageNames.join(', '));
+          }
+        } catch (err: any) {
+          // If languages fetch fails, continue without languages
+          if (err?.response?.status === 403 || err?.response?.status === 429) {
+            console.warn(`[BACKEND] Rate limited while fetching languages for ${repo.name}`);
+          } else {
+            console.warn(`[BACKEND] Failed to fetch languages for ${repo.name}:`, err?.response?.status || err?.message);
+          }
+          repo.languages = {};
+        }
+        
+        // Fetch README for OpenAI context (optional, don't fail if missing)
+        try {
+          const readmeCacheKey = `github_readme_${repo.name}`;
+          let readmeContent = getCached(readmeCacheKey);
+          
+          if (!readmeContent) {
+            const readmeResponse = await axios.get(
+              `https://api.github.com/repos/${githubUsername}/${repo.name}/readme`,
+              { headers }
+            );
+            
+            if (readmeResponse.data?.content) {
+              // Decode base64 content and extract first 500 characters
+              const fullContent = Buffer.from(readmeResponse.data.content, 'base64').toString('utf-8');
+              readmeContent = fullContent.substring(0, 500).replace(/\n/g, ' ').trim();
+              setCached(readmeCacheKey, readmeContent, 10 * 60 * 1000); // 10 minutes cache
+            }
+          }
+          
+          repo.readmeExcerpt = readmeContent || undefined;
+        } catch (err: any) {
+          // README is optional, continue without it
+          if (err?.response?.status !== 404) {
+            // Only log non-404 errors (404 means no README, which is fine)
+            if (err?.response?.status !== 403 && err?.response?.status !== 429) {
+              console.warn(`[BACKEND] Failed to fetch README for ${repo.name}:`, err?.response?.status || err?.message);
+            }
+          }
+          repo.readmeExcerpt = undefined;
+        }
+        
+        return repo;
+      })
+    );
+    
+    // Filter repositories - AUTO-INCLUDE all qualifying repos
+    const filteredRepos = reposWithTopics.filter((repo: any) => {
+      // Inclusion logic:
+      // 1. INCLUDE all non-archived, non-fork, public repos by default
+      // 2. INCLUDE forks if they have the "portfolio" topic (explicit opt-in for forks)
+      // 3. EXCLUDE repos with "no-portfolio" topic (explicit opt-out)
+      // 4. EXCLUDE archived repos always
+      
+      const hasPortfolioTopic = repo.topics && repo.topics.includes('portfolio');
+      const hasNoPortfolioTopic = repo.topics && repo.topics.includes('no-portfolio');
+      
+      // Explicit exclusion takes priority
+      if (hasNoPortfolioTopic) {
+        console.log(`[BACKEND] Excluding repo ${repo.name}: has 'no-portfolio' topic`);
+        return false;
+      }
+      
+      // Archived repos are always excluded
+      if (repo.archived) {
+        console.log(`[BACKEND] Excluding repo ${repo.name}: archived`);
+        return false;
+      }
+      
+      // Forks are excluded unless they have 'portfolio' topic
+      if (repo.fork && !hasPortfolioTopic) {
+        console.log(`[BACKEND] Excluding repo ${repo.name}: fork without 'portfolio' topic`);
+        return false;
+      }
+      
+      // All other repos are included
+      console.log(`[BACKEND] Including repo ${repo.name}: fork=${repo.fork}, hasPortfolio=${hasPortfolioTopic}`);
+      return true;
+    });
+    
+    // Map repositories to project format (async operations require Promise.all)
+    const projects = await Promise.all(
+      filteredRepos.map(async (repo: any) => {
+        // Extract tech stack from topics (common tech topics)
+        const techTopics = [
+          'react', 'typescript', 'javascript', 'nodejs', 'python', 'java', 'go', 'rust',
+          'vue', 'angular', 'svelte', 'nextjs', 'express', 'fastapi', 'django', 'flask',
+          'tailwindcss', 'css', 'html', 'mongodb', 'postgresql', 'mysql', 'redis',
+          'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'terraform', 'graphql', 'rest'
+        ];
+        
+        const tech: string[] = [];
+        
+        // First, add tech from topics
+        (repo.topics || []).forEach((topic: string) => {
+          if (techTopics.includes(topic.toLowerCase())) {
+            const formatted = topic
+              .split('-')
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+            tech.push(formatted);
+          }
+        });
+        
+        // Then, add all languages from the languages API (sorted by bytes, descending)
+        if (repo.languages && Object.keys(repo.languages).length > 0) {
+          const languages = Object.entries(repo.languages)
+            .sort(([, a]: [string, any], [, b]: [string, any]) => (b as number) - (a as number))
+            .map(([lang]: [string, any]) => lang);
+          
+          languages.forEach((lang: string) => {
+            // Don't add duplicates, and format language names nicely
+            const formatted = lang
+              .split('-')
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+            if (!tech.includes(formatted)) {
+              tech.push(formatted);
+            }
+          });
+        }
+        
+        // Fallback: if still no tech from topics or languages API, use the primary language from repo.language
+        // But only if we didn't get languages from the API (to avoid duplicates)
+        if (tech.length === 0 && repo.language) {
+          tech.push(repo.language);
+        } else if (tech.length > 0 && !repo.languages && repo.language) {
+          // If we have tech from topics but languages API failed, still add primary language if not already present
+          const formatted = repo.language
+            .split('-')
+            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+          if (!tech.includes(formatted)) {
+            tech.push(formatted);
+          }
+        }
+        
+        // Determine demo URL
+        let demoUrl = '#';
+        if (repo.homepage && repo.homepage !== '') {
+          demoUrl = repo.homepage;
+        } else if (repo.name === 'MyLink') {
+          demoUrl = 'https://developer.epildevconnect.uk/myhub/';
+        } else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
+          // For 8bp-rewards projects, use GitHub repo URL as demo
+          demoUrl = repo.html_url;
+        }
+        
+        // Description handling with OpenAI integration
+        let description = repo.description;
+        const githubDescription = repo.description;
+        
+        // Check if we need to generate a description
+        const needsGeneration = 
+          !githubDescription || 
+          githubDescription.trim() === '' || 
+          isPlaceholderDescription(githubDescription);
+        
+        // Check database cache first
+        const cachedDesc = await getProjectDescription(repo.name);
+        const shouldRegenerate = cachedDesc?.regenerate_flag === true;
+        
+        if (needsGeneration || shouldRegenerate) {
+          // Try to use cached OpenAI description first (if not flagged for regeneration)
+          if (cachedDesc && cachedDesc.is_auto_generated && !shouldRegenerate) {
+            description = cachedDesc.description;
+            console.log(`[BACKEND] Using cached OpenAI description for ${repo.name}`);
+          } else {
+            // Generate new description using OpenAI
+            const generatedDesc = await generateProjectDescription({
+              name: repo.name,
+              languages: repo.languages || {},
+              topics: repo.topics || [],
+              readmeExcerpt: repo.readmeExcerpt,
+              description: githubDescription
+            });
+            
+            if (generatedDesc) {
+              // Save to database
+              await saveProjectDescription(repo.name, generatedDesc, true, 'openai');
+              description = generatedDesc;
+              console.log(`[BACKEND] Generated and cached OpenAI description for ${repo.name}`);
+            } else {
+              // OpenAI generation failed, try cached description even if old
+              if (cachedDesc) {
+                description = cachedDesc.description;
+                console.log(`[BACKEND] OpenAI generation failed, using cached description for ${repo.name}`);
+              } else {
+                // Fallback to hardcoded descriptions
+                if (repo.name === 'myhub') {
+                  description = 'Real-time personal dashboard with live API integrations featuring Discord presence, Last.fm music tracking, and WakaTime coding stats';
+                } else if (repo.name === '8bp-rewards-5.2-Public') {
+                  description = 'Comprehensive automated rewards system for 8 Ball Pool with Discord bot integration, browser automation, PostgreSQL database, and real-time claim tracking';
+                } else if (repo.name === '8bp-rewards-5.0-Public' || repo.name === '8bp-rewards-5.0') {
+                  description = 'Comprehensive automated rewards system for 8 Ball Pool with Discord bot integration, browser automation, PostgreSQL database, and real-time claim tracking';
+                } else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
+                  description = 'Automated rewards system for 8 Ball Pool with Discord integration, browser automation, and comprehensive user management';
+                } else if (repo.name === 'BTD6-Auto-Assign') {
+                  description = 'Automated tower assignment system for Bloons TD 6 with intelligent placement algorithms and strategic optimisation';
+                } else {
+                  // Last resort: formatted name
+                  description = repo.name.replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+                }
+                console.log(`[BACKEND] Using fallback description for ${repo.name}`);
+              }
+            }
+          }
+        } else {
+          // GitHub description is valid, use it and cache it
+          description = githubDescription;
+          // Cache the GitHub description (if not already cached or if different)
+          if (!cachedDesc || cachedDesc.description !== githubDescription) {
+            await saveProjectDescription(repo.name, githubDescription, false, 'github');
+          }
+        }
+        
+        // Format title - special handling for specific repos
+        let title = repo.name.replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+        if (repo.name === '8bp-rewards-5.2-Public') {
+          title = '8BP Rewards 5.2';
+        } else if (repo.name === '8bp-rewards-5.0-Public') {
+          title = '8BP Rewards 5.0';
+        } else if (repo.name === '8bp-rewards-4.3.2') {
+          title = '8BP Rewards V4.3.2';
+        } else if (repo.name === 'BTD6-Auto-Assign') {
+          title = 'BTD6 Auto Assign';
+        } else if (repo.name === 'Discord-Giveaway-BOT') {
+          title = 'Discord Giveaway BOT';
+        }
+        
+        return {
+          id: repo.id,
+          title: title,
+          description: description,
+          tech: tech.length > 0 ? tech : ['GitHub'],
+          github: repo.html_url,
+          demo: demoUrl,
+          featured: repo.topics && repo.topics.includes('featured'),
+          updatedAt: repo.updated_at,
+          stars: repo.stargazers_count,
+          forks: repo.forks_count,
+        };
+      })
+    );
+    
+    // Sort projects
+    projects.sort((a: any, b: any) => {
+        // Sort by featured first, then by updated date
+        if (a.featured && !b.featured) return -1;
+        if (!a.featured && b.featured) return 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+    
+    const result = { projects };
+    
+    // Cache the result
+    setCached(cacheKey, result);
+    
+    console.log(`[BACKEND] GitHub API success - found ${projects.length} projects`);
+    res.json(result);
+  } catch (error: any) {
+    console.error('GitHub API error:', error?.response?.status, error?.message);
+    // Rate limit (403 or 429) - try to return cached data if available
+    if (error?.response?.status === 403 || error?.response?.status === 429) {
+      const cached = getCached(cacheKey);
+      if (cached) {
+        console.log('[BACKEND] Rate limited - returning cached data');
+        return res.json(cached);
+      }
+      
+      const githubToken = process.env.GITHUB_TOKEN;
+      const rateLimitRemaining = error?.response?.headers['x-ratelimit-remaining'];
+      const rateLimitReset = error?.response?.headers['x-ratelimit-reset'];
+      const resetTime = rateLimitReset ? new Date(parseInt(rateLimitReset) * 1000).toISOString() : 'unknown';
+      
+      return res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        message: `GitHub API rate limit exceeded. ${githubToken ? 'Consider adding GITHUB_TOKEN to .env for higher limits.' : 'Add GITHUB_TOKEN to .env for 5000 requests/hour instead of 60.'} Rate limit resets at: ${resetTime}`,
+        projects: [],
+        rateLimitRemaining,
+        rateLimitReset: resetTime
+      });
+    }
+    // Network/timeout errors
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable',
+        message: 'GitHub API is currently unreachable.',
+        projects: []
+      });
+    }
+    res.status(500).json({ error: 'Failed to fetch GitHub repositories', projects: [] });
+  }
+};
+
+apiRouter.get('/github/repos', handleGitHubRepos);
+app.get('/myhub/api/github/repos', handleGitHubRepos);
+
+// Cache clear endpoint - forces fresh fetch from GitHub
+const handleClearCache = async (req: express.Request, res: express.Response) => {
+  const pattern = req.query.pattern as string | undefined;
+  console.log(`[BACKEND] /api/cache/clear hit - pattern: ${pattern || 'all'}`);
+  
+  try {
+    const clearedCount = clearCache(pattern);
+    res.json({
+      success: true,
+      message: `Cleared ${clearedCount} cache entries`,
+      pattern: pattern || 'all'
+    });
+  } catch (error: any) {
+    console.error('[BACKEND] Cache clear error:', error?.message);
+    res.status(500).json({ error: 'Failed to clear cache' });
+  }
+};
+
+apiRouter.post('/cache/clear', handleClearCache);
+app.post('/myhub/api/cache/clear', handleClearCache);
+
+// GitHub code snippets endpoint
+const handleGitHubCodeSnippets = async (req: express.Request, res: express.Response) => {
+  console.log('[BACKEND] /api/github/code-snippets hit');
+  
+  // Check cache first
+  const cacheKey = 'github_code_snippets';
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log('[BACKEND] Returning cached GitHub code snippets data');
+    return res.json(cached);
+  }
+  
+  try {
+    const githubUsername = process.env.GITHUB_USERNAME || 'BlakeMcBride1625';
+    const githubToken = process.env.GITHUB_TOKEN;
+    
+    if (!githubToken) {
+      console.warn('[BACKEND] ⚠️ GITHUB_TOKEN not set! Rate limits will be lower');
+    }
+    
+    const headers: any = {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'MY-HUB-Dashboard/1.0'
+    };
+    
+    if (githubToken) {
+      headers['Authorization'] = `token ${githubToken}`;
+    }
+    
+    // Define interesting code files to fetch from different repos
+    const codeSnippets = [
+      {
+        repo: '8bp-rewards-5.0-Public',
+        path: 'backend/src/services/DiscordNotificationService.ts',
+        title: '8BP Rewards - Discord Notification Service',
+        language: 'typescript'
+      },
+      {
+        repo: '8bp-rewards-5.0-Public',
+        path: 'backend/src/server.ts',
+        title: '8BP Rewards - Main Server Setup',
+        language: 'typescript'
+      },
+      {
+        repo: '8bp-rewards-5.0-Public',
+        path: 'backend/src/routes/postgresql-db.ts',
+        title: '8BP Rewards - Database Routes',
+        language: 'typescript'
+      },
+      {
+        repo: '8bp-rewards-5.0-Public',
+        path: 'backend/src/constants.ts',
+        title: '8BP Rewards - Constants & Configuration',
+        language: 'typescript'
+      },
+      {
+        repo: '8bp-rewards-5.0-Public',
+        path: 'frontend/src/App.tsx',
+        title: '8BP Rewards - Frontend App Component',
+        language: 'typescript'
+      },
+      {
+        repo: 'myhub',
+        path: 'server/index.ts',
+        title: 'MY HUB - Main Server Setup',
+        language: 'typescript'
+      },
+      {
+        repo: 'myhub',
+        path: 'src/components/ActivityFeed.tsx',
+        title: 'MY HUB - Activity Feed Component',
+        language: 'typescript'
+      }
+    ];
+    
+    // Fetch code snippets from GitHub with delays to avoid rate limiting
+    const snippets = await Promise.all(
+      codeSnippets.map(async (snippet, index) => {
+        // Add delay between requests to avoid rate limiting
+        if (index > 0) {
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay between each snippet
+        }
+        
+        // Check cache first
+        const snippetCacheKey = `github_snippet_${snippet.repo}_${snippet.path}`;
+        const cachedSnippet = getCached(snippetCacheKey);
+        if (cachedSnippet) {
+          return cachedSnippet;
+        }
+        
+        try {
+          const response = await axios.get(
+            `https://api.github.com/repos/${githubUsername}/${snippet.repo}/contents/${snippet.path}`,
+            { headers }
+          );
+          
+          // Decode base64 content
+          const content = Buffer.from(response.data.content, 'base64').toString('utf-8');
+          
+          // Limit to first 500 lines to keep it manageable
+          const lines = content.split('\n');
+          const limitedContent = lines.slice(0, 500).join('\n');
+          
+          const snippetData = {
+            id: snippet.repo + snippet.path,
+            title: snippet.title,
+            language: snippet.language,
+            code: limitedContent,
+            repo: snippet.repo,
+            path: snippet.path,
+            fullUrl: `https://github.com/${githubUsername}/${snippet.repo}/blob/main/${snippet.path}`
+          };
+          
+          // Cache the snippet
+          setCached(snippetCacheKey, snippetData, 10 * 60 * 1000); // 10 minutes for code snippets
+          
+          return snippetData;
+        } catch (err: any) {
+          if (err?.response?.status === 403 || err?.response?.status === 429) {
+            console.warn(`[BACKEND] Rate limited while fetching ${snippet.repo}/${snippet.path}`);
+          } else {
+            console.warn(`[BACKEND] Failed to fetch ${snippet.repo}/${snippet.path}:`, err?.response?.status || err?.message);
+          }
+          // Return a placeholder if file doesn't exist
+          return {
+            id: snippet.repo + snippet.path,
+            title: snippet.title,
+            language: snippet.language,
+            code: `// File not found or not accessible: ${snippet.repo}/${snippet.path}\n// Error: ${err?.response?.status || err?.message}`,
+            repo: snippet.repo,
+            path: snippet.path,
+            fullUrl: `https://github.com/${githubUsername}/${snippet.repo}`
+          };
+        }
+      })
+    );
+    
+    const result = { snippets };
+    
+    // Cache the full result
+    setCached(cacheKey, result, 10 * 60 * 1000); // 10 minutes cache
+    
+    console.log(`[BACKEND] GitHub code snippets success - found ${snippets.length} snippets`);
+    res.json(result);
+  } catch (error: any) {
+    console.error('GitHub code snippets error:', error?.response?.status, error?.message);
+    if (error?.response?.status === 403 || error?.response?.status === 429) {
+      // Try to return cached data if available
+      const cached = getCached(cacheKey);
+      if (cached) {
+        console.log('[BACKEND] Rate limited - returning cached code snippets');
+        return res.json(cached);
+      }
+      
+      const githubToken = process.env.GITHUB_TOKEN;
+      const rateLimitRemaining = error?.response?.headers['x-ratelimit-remaining'];
+      const rateLimitReset = error?.response?.headers['x-ratelimit-reset'];
+      const resetTime = rateLimitReset ? new Date(parseInt(rateLimitReset) * 1000).toISOString() : 'unknown';
+      
+      return res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        message: `GitHub API rate limit exceeded. ${githubToken ? 'Consider adding GITHUB_TOKEN to .env for higher limits.' : 'Add GITHUB_TOKEN to .env for 5000 requests/hour instead of 60.'} Rate limit resets at: ${resetTime}`,
+        snippets: [],
+        rateLimitRemaining,
+        rateLimitReset: resetTime
+      });
+    }
+    res.status(500).json({ error: 'Failed to fetch GitHub code snippets', snippets: [] });
+  }
+};
+
+apiRouter.get('/github/code-snippets', handleGitHubCodeSnippets);
+app.get('/myhub/api/github/code-snippets', handleGitHubCodeSnippets);
+
 // System Specs endpoint - moved to be registered with other explicit routes
 // Handler definition:
 async function handleSystemSpecs(req: express.Request, res: express.Response) {
@@ -1171,7 +1872,7 @@ async function handleSystemSpecs(req: express.Request, res: express.Response) {
       cpu: process.env.MAC_CPU || 'Apple M2 Max',
       ram: process.env.MAC_RAM || '96 GB',
       storage: process.env.MAC_STORAGE || 'Macintosh HD',
-      os: process.env.MAC_OS || 'Tahoe 26.1',
+      os: process.env.MAC_OS || 'Tahoe 26.2',
     };
     
     console.log('[SystemSpecs] Returning specs:', { mac: macSpecs, vps: vpsSpecs });
@@ -1252,9 +1953,23 @@ app.post('/api/contact/discord', async (req, res) => {
     const { message } = req.body;
     const user: any = req.user;
     
-        // Send DM via Discord (requires bot setup or webhook)
-        // For now, we'll send an email notification
-        const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+    // Try to send DM via Discord bot first
+    if (discordBot && discordBot.user) {
+      try {
+        const adminUserId = process.env.ADMIN_DISCORD_ID;
+        if (adminUserId) {
+          const adminUser = await discordBot.users.fetch(adminUserId);
+          await adminUser.send(`**Message from ${user.profile.username}:**\n${message}`);
+          return res.json({ success: true, method: 'discord' });
+        }
+      } catch (dmError: any) {
+        console.error('Failed to send Discord DM:', dmError.message);
+        // Fall through to email notification
+      }
+    }
+    
+    // Fallback to email notification
+    const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
         await transporter.sendMail({
           from: fromEmail, // Plain email address
           to: process.env.SMTP_USER,
@@ -1490,10 +2205,52 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
+async function initializeDiscordBot() {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  
+  if (!botToken) {
+    console.warn('⚠️  DISCORD_BOT_TOKEN not set - Discord bot will not be online');
+    return;
+  }
+
+  try {
+    discordBot = new Client({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.DirectMessages,
+      ],
+    });
+
+    discordBot.once('clientReady', () => {
+      console.log(`🤖 Discord bot is online! Logged in as ${discordBot?.user?.tag}`);
+    });
+    
+    // Also listen to 'ready' for backwards compatibility
+    discordBot.once('ready', () => {
+      console.log(`🤖 Discord bot is online! Logged in as ${discordBot?.user?.tag}`);
+    });
+
+    discordBot.on('error', (error) => {
+      console.error('❌ Discord bot error:', error);
+    });
+
+    await discordBot.login(botToken);
+    console.log('🔌 Discord bot connecting...');
+  } catch (error: any) {
+    console.error('❌ Failed to initialize Discord bot:', error.message);
+    discordBot = null;
+  }
+}
+
 // Initialize database and start server
 async function startServer() {
   try {
     await initializeDatabase();
+    
+    // Initialize Discord bot
+    await initializeDiscordBot();
+    
     app.listen(PORT, () => {
       console.log(`🚀 Backend server running on port ${PORT}`);
       console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);

@@ -151,13 +151,26 @@ export default function NowPlaying({
                 {track?.name || (isOffline ? 'Last played track: Loading...' : 'Loading music data...')}
               </p>
               <p className={`text-gray-400 text-sm truncate ${isOffline && !isNowPlaying ? 'opacity-70' : ''}`}>
-                {track?.artist?.['#text'] || track?.artist || (track ? 'Unknown artist' : 'Fetching artist...')}
+                {(() => {
+                  // Safely extract artist name - handle both string and object formats
+                  if (!track?.artist) return track ? 'Unknown artist' : 'Fetching artist...';
+                  if (typeof track.artist === 'string') return track.artist;
+                  if (track.artist['#text']) return track.artist['#text'];
+                  return 'Unknown artist';
+                })()}
               </p>
-              {(track?.album?.['#text'] || track?.album) && (
-                <p className={`text-gray-500 text-xs truncate mt-1 ${isOffline && !isNowPlaying ? 'opacity-60' : ''}`}>
-                  {track.album['#text'] || track.album}
-                </p>
-              )}
+              {(() => {
+                // Safely extract album name - handle both string and object formats
+                const album = track?.album;
+                if (!album) return null;
+                const albumName = typeof album === 'string' ? album : (album['#text'] || null);
+                if (!albumName) return null;
+                return (
+                  <p className={`text-gray-500 text-xs truncate mt-1 ${isOffline && !isNowPlaying ? 'opacity-60' : ''}`}>
+                    {albumName}
+                  </p>
+                );
+              })()}
             </div>
 
             {/* Status Badge - ALWAYS visible */}

@@ -81,7 +81,7 @@ services:
     volumes:
       - ./cloudflare-tunnel-config.yml:/etc/cloudflared/config.yml:ro
     healthcheck:
-      test: ["CMD", "cloudflared", "tunnel", "info"]
+      test: ["CMD", "cloudflared", "tunnel", "info", "143de656-3edc-4cfe-9463-50fb6b354318"]
       interval: 30s
       timeout: 10s
       retries: 3

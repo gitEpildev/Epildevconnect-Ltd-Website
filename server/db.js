@@ -1,18 +1,8 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.pool = void 0;
-exports.initializeDatabase = initializeDatabase;
-exports.logUserLogin = logUserLogin;
-exports.isUserBlocked = isUserBlocked;
-exports.getOrCreateConversation = getOrCreateConversation;
-const pg_1 = require("pg");
-const dotenv_1 = __importDefault(require("dotenv"));
-dotenv_1.default.config();
+import { Pool } from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
 // PostgreSQL connection pool
-exports.pool = new pg_1.Pool({
+export const pool = new Pool({
     host: process.env.POSTGRES_HOST || 'localhost',
     port: parseInt(process.env.POSTGRES_PORT || '5432'),
     database: process.env.POSTGRES_DB || 'myhub',
@@ -23,16 +13,16 @@ exports.pool = new pg_1.Pool({
     connectionTimeoutMillis: 2000,
 });
 // Test connection
-exports.pool.on('connect', () => {
+pool.on('connect', () => {
     console.log('✅ Connected to PostgreSQL database');
 });
-exports.pool.on('error', (err) => {
+pool.on('error', (err) => {
     console.error('❌ Unexpected error on idle PostgreSQL client', err);
     process.exit(-1);
 });
 // Initialize database schema
-async function initializeDatabase() {
-    const client = await exports.pool.connect();
+export async function initializeDatabase() {
+    const client = await pool.connect();
     try {
         // Create users table for security tracking
         await client.query(`
@@ -76,6 +66,18 @@ async function initializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+        // Create project_descriptions table for OpenAI-generated descriptions
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS project_descriptions (
+        repo_name VARCHAR(255) PRIMARY KEY,
+        description TEXT NOT NULL,
+        is_auto_generated BOOLEAN DEFAULT FALSE,
+        source VARCHAR(50) DEFAULT 'github',
+        regenerate_flag BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
         // Create indexes for better performance
         await client.query(`
       CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id);
@@ -85,6 +87,8 @@ async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+      CREATE INDEX IF NOT EXISTS idx_project_descriptions_repo_name ON project_descriptions(repo_name);
+      CREATE INDEX IF NOT EXISTS idx_project_descriptions_regenerate_flag ON project_descriptions(regenerate_flag);
     `);
         console.log('✅ Database schema initialized successfully');
     }
@@ -97,8 +101,8 @@ async function initializeDatabase() {
     }
 }
 // Helper function to log/update user login
-async function logUserLogin(userId, userName, userAvatar, ipAddress) {
-    const client = await exports.pool.connect();
+export async function logUserLogin(userId, userName, userAvatar, ipAddress) {
+    const client = await pool.connect();
     try {
         // Check if user exists
         const existingUser = await client.query('SELECT * FROM users WHERE user_id = $1', [userId]);
@@ -123,8 +127,8 @@ async function logUserLogin(userId, userName, userAvatar, ipAddress) {
     }
 }
 // Helper function to check if user is blocked
-async function isUserBlocked(userId) {
-    const client = await exports.pool.connect();
+export async function isUserBlocked(userId) {
+    const client = await pool.connect();
     try {
         const result = await client.query('SELECT is_blocked FROM users WHERE user_id = $1', [userId]);
         return result.rows.length > 0 ? result.rows[0].is_blocked : false;
@@ -134,19 +138,70 @@ async function isUserBlocked(userId) {
     }
 }
 // Helper function to get or create a conversation
-async function getOrCreateConversation(userId, userName, userAvatar) {
-    const client = await exports.pool.connect();
+// Returns { conversation, isNew } where isNew indicates if conversation was just created
+export async function getOrCreateConversation(userId, userName, userAvatar) {
+    const client = await pool.connect();
     try {
         // Check if conversation exists
         const existingConv = await client.query('SELECT * FROM conversations WHERE user_id = $1', [userId]);
         if (existingConv.rows.length > 0) {
-            return existingConv.rows[0];
+            return { conversation: existingConv.rows[0], isNew: false };
         }
         // Create new conversation
         const newConv = await client.query(`INSERT INTO conversations (user_id, user_name, user_avatar, status)
        VALUES ($1, $2, $3, 'open')
        RETURNING *`, [userId, userName, userAvatar]);
-        return newConv.rows[0];
+        return { conversation: newConv.rows[0], isNew: true };
+    }
+    finally {
+        client.release();
+    }
+}
+// Helper function to get project description from cache
+export async function getProjectDescription(repoName) {
+    const client = await pool.connect();
+    try {
+        const result = await client.query('SELECT description, is_auto_generated, source, regenerate_flag FROM project_descriptions WHERE repo_name = $1', [repoName]);
+        if (result.rows.length === 0) {
+            return null;
+        }
+        return {
+            description: result.rows[0].description,
+            is_auto_generated: result.rows[0].is_auto_generated,
+            source: result.rows[0].source,
+            regenerate_flag: result.rows[0].regenerate_flag
+        };
+    }
+    finally {
+        client.release();
+    }
+}
+// Helper function to save project description
+export async function saveProjectDescription(repoName, description, isAutoGenerated = false, source = 'github') {
+    const client = await pool.connect();
+    try {
+        await client.query(`INSERT INTO project_descriptions (repo_name, description, is_auto_generated, source, regenerate_flag, updated_at)
+       VALUES ($1, $2, $3, $4, FALSE, CURRENT_TIMESTAMP)
+       ON CONFLICT (repo_name) 
+       DO UPDATE SET 
+         description = $2,
+         is_auto_generated = $3,
+         source = $4,
+         regenerate_flag = FALSE,
+         updated_at = CURRENT_TIMESTAMP`, [repoName, description, isAutoGenerated, source]);
+    }
+    finally {
+        client.release();
+    }
+}
+// Helper function to mark project for regeneration
+export async function markForRegeneration(repoName) {
+    const client = await pool.connect();
+    try {
+        await client.query(`INSERT INTO project_descriptions (repo_name, description, regenerate_flag, updated_at)
+       VALUES ($1, '', TRUE, CURRENT_TIMESTAMP)
+       ON CONFLICT (repo_name)
+       DO UPDATE SET regenerate_flag = TRUE, updated_at = CURRENT_TIMESTAMP`, [repoName]);
     }
     finally {
         client.release();

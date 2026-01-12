@@ -7,12 +7,38 @@ interface TechItem {
 }
 
 const techStack: Record<string, TechItem[]> = {
-  Languages: [
-    { name: 'TypeScript', url: 'https://www.typescriptlang.org/' },
-    { name: 'JavaScript', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript' },
-    { name: 'Python', url: 'https://www.python.org/' },
+  'Programming Languages': [
+    { name: 'C', url: 'https://en.cppreference.com/w/c' },
     { name: 'C++', url: 'https://isocpp.org/' },
+    { name: 'Java', url: 'https://www.java.com/' },
+    { name: 'C#', url: 'https://dotnet.microsoft.com/languages/csharp' },
+    { name: 'Objective C', url: 'https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ProgrammingWithObjectiveC/Introduction/Introduction.html' },
+    { name: 'Python', url: 'https://www.python.org/' },
+    { name: 'JavaScript', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript' },
+    { name: 'TypeScript', url: 'https://www.typescriptlang.org/' },
+    { name: 'Go', url: 'https://go.dev/' },
+    { name: 'Swift', url: 'https://www.swift.org/' },
+    { name: 'PHP', url: 'https://www.php.net/' },
+  ],
+  'Web & Markup': [
+    { name: 'HTML', url: 'https://developer.mozilla.org/en-US/docs/Web/HTML' },
+    { name: 'CSS', url: 'https://developer.mozilla.org/en-US/docs/Web/CSS' },
+    { name: 'SCSS', url: 'https://sass-lang.com/' },
+  ],
+  'Database Languages': [
     { name: 'SQL', url: 'https://www.iso.org/standard/63555.html' },
+    { name: 'PL SQL', url: 'https://www.oracle.com/database/technologies/appdev/plsql.html' },
+    { name: 'T SQL', url: 'https://docs.microsoft.com/en-us/sql/t-sql/language-reference' },
+  ],
+  'Scripting Languages': [
+    { name: 'Bash', url: 'https://www.gnu.org/software/bash/' },
+    { name: 'PowerShell', url: 'https://docs.microsoft.com/en-us/powershell/' },
+    { name: 'Perl', url: 'https://www.perl.org/' },
+    { name: 'Lua', url: 'https://www.lua.org/' },
+    { name: 'Shell Script', url: 'https://www.gnu.org/software/bash/manual/html_node/Shell-Scripts.html' },
+  ],
+  'Low-Level': [
+    { name: 'Assembly', url: 'https://en.wikipedia.org/wiki/Assembly_language' },
   ],
   'Frontend Frameworks': [
     { name: 'React', url: 'https://react.dev/' },

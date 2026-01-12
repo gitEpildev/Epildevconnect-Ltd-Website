@@ -6,6 +6,8 @@ interface ActivityFeedProps {
   lastfmData: any;
   wakatimeData: any;
   hideDetails: boolean;
+  isLoading?: boolean;
+  error?: Error | null;
 }
 
 export default function ActivityFeed({
@@ -13,6 +15,8 @@ export default function ActivityFeed({
   lastfmData,
   wakatimeData,
   hideDetails,
+  isLoading = false,
+  error = null,
 }: ActivityFeedProps) {
   const activities: Array<{
     icon: any;
@@ -22,9 +26,9 @@ export default function ActivityFeed({
   }> = [];
 
   // Discord Activity
-  if (lanyardData?.success) {
+  if (lanyardData?.success && lanyardData?.data) {
     const presence = lanyardData.data;
-    const status = presence.discord_status;
+    const status = presence?.discord_status;
     
     if (status === 'online' || status === 'idle' || status === 'dnd') {
       activities.push({
@@ -35,36 +39,51 @@ export default function ActivityFeed({
     }
 
     // Check for activities
-    const discordActivities = presence.activities || [];
-    discordActivities
-      .filter((a: any) => a.type !== 4) // Exclude custom status
-      .forEach((activity: any) => {
-        if (activity.type === 2) {
-          // Spotify
-          activities.push({
-            icon: Music,
-            text: `Listening to ${activity.details} by ${activity.state}`,
-            color: 'text-[#1DB954]',
-          });
-        } else {
-          activities.push({
-            icon: Activity,
-            text: `${activity.name}: ${activity.details || activity.state || 'Active'}`,
-            color: 'text-blue-400',
-          });
-        }
-      });
+    const discordActivities = presence?.activities || [];
+    if (Array.isArray(discordActivities)) {
+      discordActivities
+        .filter((a: any) => a && a.type !== 4) // Exclude custom status and null activities
+        .forEach((activity: any) => {
+          if (activity.type === 2 && activity.details && activity.state) {
+            // Spotify
+            activities.push({
+              icon: Music,
+              text: `Listening to ${activity.details} by ${activity.state}`,
+              color: 'text-[#1DB954]',
+            });
+          } else if (activity.name) {
+            activities.push({
+              icon: Activity,
+              text: `${activity.name}: ${activity.details || activity.state || 'Active'}`,
+              color: 'text-blue-400',
+            });
+          }
+        });
+    }
   }
 
   // Last.fm Activity
   if (lastfmData?.recenttracks?.track?.[0]) {
     const track = lastfmData.recenttracks.track[0];
-    const isNowPlaying = track['@attr']?.nowplaying === 'true';
+    const isNowPlaying = track?.['@attr']?.nowplaying === 'true';
     
-    if (isNowPlaying) {
+    if (isNowPlaying && track.name) {
+      // Safely extract artist name - handle both string and object formats
+      let artistName = 'Unknown Artist';
+      if (track.artist) {
+        if (typeof track.artist === 'string') {
+          artistName = track.artist;
+        } else if (track.artist['#text'] && typeof track.artist['#text'] === 'string') {
+          artistName = track.artist['#text'];
+        }
+      }
+      
+      // Ensure track.name is a string
+      const trackName = typeof track.name === 'string' ? track.name : String(track.name || 'Unknown Track');
+      
       activities.push({
         icon: Music,
-        text: `Now playing: ${track.name} — ${track.artist['#text']}`,
+        text: `Now playing: ${trackName} — ${artistName}`,
         color: 'text-green-400',
       });
     }
@@ -75,26 +94,39 @@ export default function ActivityFeed({
     const stats = wakatimeData.data;
     
     // Always show Cursor if it's in the editors list
-    const cursorEditor = stats.editors?.find((editor: any) => 
-      editor.name.toLowerCase() === 'cursor'
-    );
-    
-    if (cursorEditor) {
-      activities.push({
-        icon: Code2,
-        text: `Using Cursor (${cursorEditor.text})`,
-        color: 'text-cyan-400',
-      });
+    if (stats.editors && Array.isArray(stats.editors)) {
+      const cursorEditor = stats.editors.find((editor: any) => 
+        editor.name?.toLowerCase() === 'cursor'
+      );
+      
+      if (cursorEditor) {
+        activities.push({
+          icon: Code2,
+          text: `Using Cursor (${cursorEditor.text || cursorEditor.name})`,
+          color: 'text-cyan-400',
+        });
+      }
     }
     
     // Show top language
-    const topLanguage = stats.languages?.[0];
-    if (topLanguage) {
+    if (stats.languages && Array.isArray(stats.languages) && stats.languages.length > 0 && stats.languages[0]?.name) {
+      const topLanguage = stats.languages[0];
+      const totalTime = stats.human_readable_total_including_other_language || stats.human_readable_total || '0 mins';
       activities.push({
         icon: Code2,
-        text: `Coded ${stats.human_readable_total_including_other_language || stats.human_readable_total} in ${topLanguage.name}`,
+        text: `Coded ${totalTime} in ${topLanguage.name}`,
         color: 'text-purple-400',
       });
+    } else if (stats.human_readable_total || stats.human_readable_total_including_other_language) {
+      // If no languages but have total time, still show coding activity
+      const totalTime = stats.human_readable_total_including_other_language || stats.human_readable_total;
+      if (totalTime) {
+        activities.push({
+          icon: Code2,
+          text: `Coded ${totalTime} today`,
+          color: 'text-purple-400',
+        });
+      }
     }
   }
 
@@ -118,6 +150,18 @@ export default function ActivityFeed({
           >
             Activity hidden (idle mode)
           </motion.div>
+        ) : isLoading && activities.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-3"
+          >
+            <div className="animate-pulse space-y-3">
+              <div className="h-16 bg-white bg-opacity-5 rounded-xl"></div>
+              <div className="h-16 bg-white bg-opacity-5 rounded-xl"></div>
+            </div>
+          </motion.div>
         ) : activities.length > 0 ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -125,23 +169,28 @@ export default function ActivityFeed({
             exit={{ opacity: 0 }}
             className="space-y-3"
           >
-            {activities.map((activity, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="flex items-start gap-3 p-3 rounded-xl bg-white bg-opacity-5 hover:bg-opacity-10 transition-all"
-              >
-                <activity.icon className={`w-5 h-5 mt-0.5 flex-shrink-0 ${activity.color}`} />
-                <p className="text-sm flex-1">{activity.text}</p>
-                {activity.timestamp && (
-                  <span className="text-xs text-gray-500 flex-shrink-0">
-                    {activity.timestamp}
-                  </span>
-                )}
-              </motion.div>
-            ))}
+            {activities.map((activity, index) => {
+              const IconComponent = activity.icon;
+              return (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="flex items-start gap-3 p-3 rounded-xl bg-white bg-opacity-5 hover:bg-opacity-10 transition-all"
+                >
+                  {IconComponent && (
+                    <IconComponent className={`w-5 h-5 mt-0.5 flex-shrink-0 ${activity.color}`} />
+                  )}
+                  <p className="text-sm flex-1">{activity.text}</p>
+                  {activity.timestamp && (
+                    <span className="text-xs text-gray-500 flex-shrink-0">
+                      {activity.timestamp}
+                    </span>
+                  )}
+                </motion.div>
+              );
+            })}
           </motion.div>
         ) : (
           <motion.div

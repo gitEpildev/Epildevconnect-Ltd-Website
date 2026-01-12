@@ -20,6 +20,9 @@ export default function Home() {
   const wakatime = usePolling(() => fetchWakaTimeData(), 30000, true, true); // Every 30 seconds
   const discordProfile = usePolling(() => fetchDiscordProfile(DISCORD_USER_ID), 30000, true, true); // Every 30 seconds
 
+  // Safety check - ensure uptime object exists
+  const safeUptime = uptime || { formatted: '00:00:00' };
+
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
@@ -46,7 +49,7 @@ export default function Home() {
           transition={{ duration: 0.6, delay: 0.1 }}
           className="mb-8"
         >
-          <SystemUptime uptime={uptime.formatted} />
+          <SystemUptime uptime={safeUptime.formatted} />
         </motion.div>
 
         {/* Main Dashboard Grid */}
@@ -112,6 +115,8 @@ export default function Home() {
             lastfmData={lastfm.data}
             wakatimeData={wakatime.data}
             hideDetails={isIdle}
+            isLoading={wakatime.isLoading || lastfm.isLoading || lanyard.isLoading}
+            error={wakatime.error || lastfm.error || lanyard.error}
           />
         </motion.div>
       </div>
