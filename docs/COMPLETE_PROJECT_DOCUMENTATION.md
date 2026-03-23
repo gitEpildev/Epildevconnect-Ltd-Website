@@ -1925,7 +1925,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 1. **Clone Repository**
 
 ```bash
-git clone https://github.com/your-username/myhub.git
+git clone https://github.com/gitEpildev/myhub.git
 cd myhub
 ```
 
@@ -2599,7 +2599,7 @@ MY HUB is a comprehensive, production-ready full-stack application demonstrating
 **Document Version**: 1.0.0  
 **Last Updated**: January 2025  
 **Maintained By**: @epildev  
-**Project Repository**: https://github.com/your-username/myhub  
+**Project Repository**: https://github.com/gitEpildev/myhub  
 **Live Site**: https://developer.epildevconnect.uk/myhub/
 
 ---

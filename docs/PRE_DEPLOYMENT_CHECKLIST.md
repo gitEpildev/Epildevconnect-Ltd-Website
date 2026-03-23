@@ -71,7 +71,7 @@ git status
 git commit -m "Initial commit: MY HUB dashboard"
 
 # 7. Add remote (replace with your repo URL)
-git remote add origin https://github.com/YOUR_USERNAME/MY-HUB.git
+git remote add origin https://github.com/gitEpildev/myhub.git
 
 # 8. Push to GitHub
 git push -u origin main

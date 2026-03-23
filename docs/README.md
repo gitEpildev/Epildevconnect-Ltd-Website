@@ -63,7 +63,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/myhub.git
+git clone https://github.com/gitEpildev/myhub.git
 cd myhub
 
 # Install dependencies
@@ -287,7 +287,7 @@ This project is licensed under the MIT License - see the **[LICENSE](LICENSE)** 
 ### 📬 Contact
 - **Discord**: epildev (850726663289700373)
 - **Email**: [connectwithme@epildevconnect.uk](mailto:connectwithme@epildevconnect.uk)
-- **GitHub**: [@BlakeMcBride1625](https://github.com/BlakeMcBride1625)
+- **GitHub**: [@gitEpildev](https://github.com/gitEpildev)
 - **Website**: [epildevconnect.uk](https://epildevconnect.uk)
 
 ### 🌐 Connect with Me
@@ -318,7 +318,7 @@ Need help? Check the **[Documentation](docs/)** or open an issue.
 
 <div align="center">
 
-**[Website](http://localhost:1500)** • **[Documentation](docs/)** • **[Report Bug](https://github.com/yourusername/myhub/issues)** • **[Request Feature](https://github.com/yourusername/myhub/issues)**
+**[Website](http://localhost:1500)** • **[Documentation](docs/)** • **[Report Bug](https://github.com/gitEpildev/myhub/issues)** • **[Request Feature](https://github.com/gitEpildev/myhub/issues)**
 
 Made with 💙 by Blake
 

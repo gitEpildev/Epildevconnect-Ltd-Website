@@ -20,14 +20,14 @@ Click the "Fork" button at the top right of the repository page.
 ### 2. Clone Your Fork
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/MyLink.git
+git clone https://github.com/gitEpildev/myhub.git
 cd MyLink
 ```
 
 ### 3. Add Upstream Remote
 
 ```bash
-git remote add upstream https://github.com/ORIGINAL_OWNER/MyLink.git
+git remote add upstream https://github.com/gitEpildev/myhub.git
 ```
 
 ### 4. Install Dependencies

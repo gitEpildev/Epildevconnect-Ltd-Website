@@ -16,7 +16,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const githubUsername = process.env.GITHUB_USERNAME || 'BlakeMcBride1625';
+const githubUsername = process.env.GITHUB_USERNAME || 'gitEpildev';
 const githubToken = process.env.GITHUB_TOKEN;
 
 const headers = {

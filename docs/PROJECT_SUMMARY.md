@@ -572,7 +572,7 @@ This project demonstrates:
 ## 📞 Support & Contact
 
 **Built by**: Blake ([@epildev](https://discord.com/users/850726663289700373))  
-**Repository**: https://github.com/[your-repo]  
+**Repository**: https://github.com/gitEpildev/myhub  
 **Live Site**: https://developer.epildevconnect.uk/myhub/  
 **Discord**: 850726663289700373
 

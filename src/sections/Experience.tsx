@@ -7,17 +7,20 @@ const currentYear = new Date().getFullYear();
 const experiences = [
   {
     id: 1,
-    title: 'Senior IT App Developer',
+    title: 'Senior DevOps Engineer | AI Modelling & App Development',
     company: 'Apple Inc',
     location: 'Remote',
     period: `2022 - ${currentYear}`,
     description:
-      'Developed and maintained enterprise-scale applications for Apple\'s internal systems, working with cutting-edge technologies and large-scale infrastructure.',
+      'Senior DevOps Engineer specialising in AI Modelling and App Development for Apple\'s enterprise systems. Designing and implementing infrastructure automation, CI/CD pipelines, and deployment strategies for AI/ML models and enterprise applications.',
     highlights: [
-      'Built scalable applications serving thousands of internal users',
-      'Collaborated with cross-functional teams across multiple time zones',
-      'Optimised application performance and user experience',
-      'Maintained high code quality standards and best practices',
+      'Designed and implemented end-to-end DevOps pipelines for AI/ML model deployment and enterprise application releases',
+      'Automated infrastructure provisioning, configuration management, and orchestration for large-scale distributed systems',
+      'Developed and maintained enterprise applications serving thousands of internal users with high availability and performance',
+      'Built and optimised CI/CD workflows for AI modelling projects, enabling rapid iteration and deployment of ML models',
+      'Collaborated with cross-functional teams including data scientists, ML engineers, and software developers on infrastructure and application initiatives',
+      'Optimised deployment processes, application performance, and model inference pipelines to reduce latency and improve scalability',
+      'Implemented monitoring, logging, and alerting systems for production AI/ML workloads and applications',
     ],
   },
   {

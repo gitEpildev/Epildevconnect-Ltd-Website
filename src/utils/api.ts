@@ -98,32 +98,6 @@ export const fetchWakaTimeData = async () => {
   }
 };
 
-// GitHub Repos API - fetch public repositories
-export const fetchGitHubRepos = async () => {
-  console.log('[API] fetchGitHubRepos called');
-  try {
-    const response = await api.get('/github/repos');
-    console.log('[API] fetchGitHubRepos success:', response.status);
-    return response.data;
-  } catch (error: any) {
-    console.error('[API] fetchGitHubRepos error:', error.response?.status, error.message);
-    throw error;
-  }
-};
-
-// GitHub Code Snippets API - fetch interesting code snippets
-export const fetchGitHubCodeSnippets = async () => {
-  console.log('[API] fetchGitHubCodeSnippets called');
-  try {
-    const response = await api.get('/github/code-snippets');
-    console.log('[API] fetchGitHubCodeSnippets success:', response.status);
-    return response.data;
-  } catch (error: any) {
-    console.error('[API] fetchGitHubCodeSnippets error:', error.response?.status, error.message);
-    throw error;
-  }
-};
-
 // Auth API
 export const getAuthUser = async () => {
   try {
@@ -161,6 +135,32 @@ export const sendEmail = async (name: string, email: string, subject: string, me
     return response.data;
   } catch (error) {
     console.error('Failed to send email:', error);
+    throw error;
+  }
+};
+
+// GitHub Repos API
+export const fetchGitHubRepos = async () => {
+  console.log('[API] fetchGitHubRepos called');
+  try {
+    const response = await api.get('/github/repos');
+    console.log('[API] fetchGitHubRepos success:', response.status);
+    return response.data;
+  } catch (error: any) {
+    console.error('[API] fetchGitHubRepos error:', error.response?.status, error.message);
+    throw error;
+  }
+};
+
+// GitHub Code Snippets API
+export const fetchGitHubCodeSnippets = async () => {
+  console.log('[API] fetchGitHubCodeSnippets called');
+  try {
+    const response = await api.get('/github/code-snippets');
+    console.log('[API] fetchGitHubCodeSnippets success:', response.status);
+    return response.data;
+  } catch (error: any) {
+    console.error('[API] fetchGitHubCodeSnippets error:', error.response?.status, error.message);
     throw error;
   }
 };

@@ -231,7 +231,7 @@ export default function DiscordPresence({
           >
                      {/* Avatar & Status - ALWAYS render with fallbacks */}
             <div className="flex items-center gap-4">
-              <div className="relative">
+              <div className="relative [&>img]:!ring-0 [&>img]:!border-0 [&>img]:!outline-0 [&>img]:![box-shadow:none]">
                          {/* Avatar */}
                          {(() => {
                            const avatarUrl = getAvatarUrl(displayUser);
@@ -239,7 +239,14 @@ export default function DiscordPresence({
                 <img
                                src={avatarUrl}
                                alt="Avatar"
-                               className="w-16 h-16 rounded-full ring-2 ring-quantum-glow"
+                               className="w-16 h-16 rounded-full"
+                               style={{ 
+                                 boxShadow: 'none', 
+                                 outline: 'none',
+                                 border: 'none',
+                                 '--tw-ring-width': '0px',
+                                 '--tw-ring-color': 'transparent'
+                               } as React.CSSProperties}
                                onError={(e) => {
                                  // Fallback to default Discord avatar if image fails
                                  e.currentTarget.src = `https://cdn.discordapp.com/embed/avatars/0.png`;
@@ -249,7 +256,14 @@ export default function DiscordPresence({
                              <img
                                src="https://cdn.discordapp.com/embed/avatars/0.png"
                   alt="Avatar"
-                  className="w-16 h-16 rounded-full ring-2 ring-quantum-glow"
+                  className="w-16 h-16 rounded-full"
+                  style={{ 
+                    boxShadow: 'none', 
+                    outline: 'none',
+                    border: 'none',
+                    '--tw-ring-width': '0px',
+                    '--tw-ring-color': 'transparent'
+                  } as React.CSSProperties}
                 />
                            );
                          })()}
