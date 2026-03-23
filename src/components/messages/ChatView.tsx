@@ -56,10 +56,45 @@ export default function ChatView({
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Prevent "snap back to bottom" while the user scrolls up to older messages.
+  const messagesRef = useRef<Message[]>([]);
+  const isUserNearBottomRef = useRef(true);
+  const shouldAutoScrollRef = useRef(false);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const isNearBottom = (el: HTMLDivElement) => {
+    const thresholdPx = 120;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
+  };
+
+  const handleMessagesScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    isUserNearBottomRef.current = isNearBottom(el);
+  };
+
+  // Keep refs in sync for interval polling comparisons.
+  useEffect(() => {
+    messagesRef.current = messages;
+    if (shouldAutoScrollRef.current) {
+      shouldAutoScrollRef.current = false;
+      requestAnimationFrame(scrollToBottom);
+    }
+  }, [messages]);
 
   // Fetch messages when conversation changes
   useEffect(() => {
     if (conversation) {
+      setMessages([]);
+      messagesRef.current = [];
+      isUserNearBottomRef.current = true;
+      shouldAutoScrollRef.current = true;
+
       fetchMessages();
       // Poll for new messages every 3 seconds
       const interval = setInterval(fetchMessages, 3000);
@@ -67,22 +102,24 @@ export default function ChatView({
     }
   }, [conversation?.id]);
 
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   const fetchMessages = async () => {
     if (!conversation) return;
     
-    setIsLoading(true);
+    // Only show loading state when we have no messages yet.
+    setIsLoading(messagesRef.current.length === 0);
     try {
       const response = await api.get(`/api/conversations/${conversation.id}/messages`);
-      setMessages(response.data.messages);
+      const nextMessages: Message[] = response.data.messages;
+
+      const prevLastId = messagesRef.current[messagesRef.current.length - 1]?.id;
+      const nextLastId = nextMessages[nextMessages.length - 1]?.id;
+      const hasNewMessage = prevLastId !== nextLastId;
+
+      // Skip state updates when nothing changed to avoid the UI snapping to bottom.
+      if (!hasNewMessage && messagesRef.current.length > 0) return;
+
+      shouldAutoScrollRef.current = hasNewMessage && isUserNearBottomRef.current;
+      setMessages(nextMessages);
     } catch (error) {
       console.error('Failed to fetch messages:', error);
     } finally {
@@ -100,9 +137,10 @@ export default function ChatView({
         content: newMessage.trim(),
       });
       
-      setMessages([...messages, response.data.message]);
+      setMessages((prev) => [...prev, response.data.message]);
       setNewMessage('');
-      scrollToBottom();
+      shouldAutoScrollRef.current = true;
+      requestAnimationFrame(scrollToBottom);
     } catch (error: any) {
       console.error('Failed to send message:', error?.response?.status, error?.response?.data, error?.message);
       const errorMsg = error?.response?.data?.error || error?.message || 'Failed to send message. Please try again.';
@@ -127,7 +165,7 @@ export default function ChatView({
   const isClosed = conversation.status === 'closed';
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Chat Header */}
       <div className="p-4 border-b border-white border-opacity-10 flex items-center justify-between bg-white bg-opacity-5">
         <div className="flex items-center gap-3">
@@ -205,7 +243,11 @@ export default function ChatView({
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        ref={messagesContainerRef}
+        onScroll={handleMessagesScroll}
+        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
+      >
         {isLoading && messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="w-8 h-8 text-quantum-glow animate-spin" />

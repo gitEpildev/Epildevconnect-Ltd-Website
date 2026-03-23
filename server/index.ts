@@ -1222,7 +1222,7 @@ const handleGitHubRepos = async (req: express.Request, res: express.Response) =>
   }
   
   try {
-    const githubUsername = process.env.GITHUB_USERNAME || 'BlakeMcBride1625';
+    const githubUsername = process.env.GITHUB_USERNAME || 'gitEpildev';
     const githubToken = process.env.GITHUB_TOKEN; // Optional, for higher rate limits
     
     if (!githubToken) {
@@ -1641,7 +1641,17 @@ const handleGitHubCodeSnippets = async (req: express.Request, res: express.Respo
   }
   
   try {
-    const githubUsername = process.env.GITHUB_USERNAME || 'BlakeMcBride1625';
+    const configuredUsername = process.env.GITHUB_USERNAME;
+    const githubUserCandidates = Array.from(
+      new Set(
+        [
+          configuredUsername,
+          process.env.GITHUB_USERNAME_FALLBACK,
+          'gitEpildev',
+          'epildev'
+        ].filter(Boolean)
+      )
+    ) as string[];
     const githubToken = process.env.GITHUB_TOKEN;
     
     if (!githubToken) {
@@ -1657,113 +1667,161 @@ const handleGitHubCodeSnippets = async (req: express.Request, res: express.Respo
       headers['Authorization'] = `token ${githubToken}`;
     }
     
-    // Define interesting code files to fetch from different repos
-    const codeSnippets = [
-      {
-        repo: '8bp-rewards-5.0-Public',
-        path: 'backend/src/services/DiscordNotificationService.ts',
-        title: '8BP Rewards - Discord Notification Service',
-        language: 'typescript'
-      },
-      {
-        repo: '8bp-rewards-5.0-Public',
-        path: 'backend/src/server.ts',
-        title: '8BP Rewards - Main Server Setup',
-        language: 'typescript'
-      },
-      {
-        repo: '8bp-rewards-5.0-Public',
-        path: 'backend/src/routes/postgresql-db.ts',
-        title: '8BP Rewards - Database Routes',
-        language: 'typescript'
-      },
-      {
-        repo: '8bp-rewards-5.0-Public',
-        path: 'backend/src/constants.ts',
-        title: '8BP Rewards - Constants & Configuration',
-        language: 'typescript'
-      },
-      {
-        repo: '8bp-rewards-5.0-Public',
-        path: 'frontend/src/App.tsx',
-        title: '8BP Rewards - Frontend App Component',
-        language: 'typescript'
-      },
-      {
-        repo: 'myhub',
-        path: 'server/index.ts',
-        title: 'MY HUB - Main Server Setup',
-        language: 'typescript'
-      },
-      {
-        repo: 'myhub',
-        path: 'src/components/ActivityFeed.tsx',
-        title: 'MY HUB - Activity Feed Component',
-        language: 'typescript'
-      }
-    ];
-    
-    // Fetch code snippets from GitHub with delays to avoid rate limiting
-    const snippets = await Promise.all(
-      codeSnippets.map(async (snippet, index) => {
-        // Add delay between requests to avoid rate limiting
-        if (index > 0) {
-          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay between each snippet
+    const tryFetchSnippet = async (owners: string[], repo: string, path: string) => {
+      // Keep this tight to ensure the endpoint stays responsive.
+      const refs = ['main', 'master'];
+      const candidateOwners = owners.slice(0, 1);
+
+      for (const owner of candidateOwners) {
+        for (const ref of refs) {
+          try {
+            const response = await axios.get(
+              `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}`,
+              { headers, timeout: 2500 }
+            );
+
+            if (response?.data?.content) {
+              return {
+                owner,
+                ref,
+                content: Buffer.from(response.data.content, 'base64').toString('utf-8')
+              };
+            }
+          } catch (err: any) {
+            // Continue trying other owner/ref combinations.
+            if (err?.response?.status !== 404) {
+              console.warn(
+                `[BACKEND] Snippet fetch issue for ${owner}/${repo}/${path}@${ref}:`,
+                err?.response?.status || err?.message
+              );
+            }
+          }
         }
-        
-        // Check cache first
-        const snippetCacheKey = `github_snippet_${snippet.repo}_${snippet.path}`;
+      }
+
+      throw new Error(`Snippet not found for ${repo}/${path} across owners/refs`);
+    };
+
+    const inferLanguageFromPath = (path: string): string => {
+      if (path.endsWith('.tsx') || path.endsWith('.ts')) return 'typescript';
+      if (path.endsWith('.jsx') || path.endsWith('.js')) return 'javascript';
+      if (path.endsWith('.py')) return 'python';
+      if (path.endsWith('.go')) return 'go';
+      if (path.endsWith('.java')) return 'java';
+      if (path.endsWith('.json')) return 'json';
+      if (path.endsWith('.md')) return 'markdown';
+      if (path.endsWith('.yml') || path.endsWith('.yaml')) return 'yaml';
+      return 'text';
+    };
+
+    const toTitle = (repoName: string, path: string): string => {
+      const repoTitle = repoName.replace(/[-_]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const fileName = path.split('/').pop() || path;
+      return `${repoTitle} - ${fileName}`;
+    };
+
+    // Get recent repos dynamically so Code Viewer stays fresh.
+    let reposOwner = githubUserCandidates[0];
+    let recentRepos: any[] = [];
+    for (const owner of githubUserCandidates) {
+      try {
+        const reposResponse = await axios.get(
+          `https://api.github.com/users/${owner}/repos?sort=updated&per_page=20&type=public`,
+          { headers, timeout: 4000 }
+        );
+        recentRepos = reposResponse.data || [];
+        reposOwner = owner;
+        if (recentRepos.length > 0) break;
+      } catch (err: any) {
+        console.warn(`[BACKEND] Failed repo list fetch for ${owner}:`, err?.response?.status || err?.message);
+      }
+    }
+
+    const filteredRepos = recentRepos
+      .filter((repo: any) => !repo.archived && !repo.fork)
+      .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+    // Prefer these repos at the top if they exist.
+    const pinnedRepos = ['myhub', '8bp-rewards-5.2-Public', '8bp-rewards-5.0-Public', 'BTD6-Auto-Assign'];
+    const orderedRepoNames = Array.from(
+      new Set([
+        ...pinnedRepos.filter((name) => filteredRepos.some((r: any) => r.name === name)),
+        ...filteredRepos.map((r: any) => r.name),
+      ])
+    ).slice(0, 8);
+    const repoOwnerByName = new Map<string, string>(
+      filteredRepos.map((repo: any) => [repo.name, repo.owner?.login || reposOwner])
+    );
+
+    const pathCandidates = [
+      'server/index.ts',
+      'src/main.tsx',
+      'src/App.tsx',
+      'backend/src/server.ts',
+      'src/components/messages/ChatView.tsx',
+      'src/components/ParticleBackground.tsx',
+      'src/components/ActivityFeed.tsx',
+      'backend/src/services/DiscordNotificationService.ts',
+      'README.md',
+    ];
+
+    const snippets: any[] = [];
+
+    for (const repoName of orderedRepoNames) {
+      if (snippets.length >= 12) break;
+
+      let selected: any = null;
+      for (const path of pathCandidates) {
+        if (snippets.length >= 12) break;
+
+        const snippetCacheKey = `github_snippet_${repoName}_${path}`;
         const cachedSnippet = getCached(snippetCacheKey);
         if (cachedSnippet) {
-          return cachedSnippet;
+          selected = cachedSnippet;
+          break;
         }
-        
+
         try {
-          const response = await axios.get(
-            `https://api.github.com/repos/${githubUsername}/${snippet.repo}/contents/${snippet.path}`,
-            { headers }
-          );
-          
-          // Decode base64 content
-          const content = Buffer.from(response.data.content, 'base64').toString('utf-8');
-          
-          // Limit to first 500 lines to keep it manageable
-          const lines = content.split('\n');
+          const repoOwner = repoOwnerByName.get(repoName) || reposOwner;
+          const fetched = await tryFetchSnippet([repoOwner], repoName, path);
+          const lines = fetched.content.split('\n');
           const limitedContent = lines.slice(0, 500).join('\n');
-          
+
           const snippetData = {
-            id: snippet.repo + snippet.path,
-            title: snippet.title,
-            language: snippet.language,
+            id: `${repoName}:${path}`,
+            title: toTitle(repoName, path),
+            language: inferLanguageFromPath(path),
             code: limitedContent,
-            repo: snippet.repo,
-            path: snippet.path,
-            fullUrl: `https://github.com/${githubUsername}/${snippet.repo}/blob/main/${snippet.path}`
+            repo: repoName,
+            path,
+            fullUrl: `https://github.com/${fetched.owner}/${repoName}/blob/${fetched.ref}/${path}`,
           };
-          
-          // Cache the snippet
-          setCached(snippetCacheKey, snippetData, 10 * 60 * 1000); // 10 minutes for code snippets
-          
-          return snippetData;
-        } catch (err: any) {
-          if (err?.response?.status === 403 || err?.response?.status === 429) {
-            console.warn(`[BACKEND] Rate limited while fetching ${snippet.repo}/${snippet.path}`);
-          } else {
-            console.warn(`[BACKEND] Failed to fetch ${snippet.repo}/${snippet.path}:`, err?.response?.status || err?.message);
-          }
-          // Return a placeholder if file doesn't exist
-          return {
-            id: snippet.repo + snippet.path,
-            title: snippet.title,
-            language: snippet.language,
-            code: `// File not found or not accessible: ${snippet.repo}/${snippet.path}\n// Error: ${err?.response?.status || err?.message}`,
-            repo: snippet.repo,
-            path: snippet.path,
-            fullUrl: `https://github.com/${githubUsername}/${snippet.repo}`
-          };
+
+          setCached(snippetCacheKey, snippetData, 10 * 60 * 1000);
+          selected = snippetData;
+          break;
+        } catch {
+          // Try the next candidate path.
         }
-      })
-    );
+      }
+
+      if (selected) {
+        snippets.push(selected);
+      }
+    }
+
+    // Keep UI populated if GitHub repo structure changes unexpectedly.
+    if (snippets.length === 0) {
+      snippets.push({
+        id: 'fallback-no-snippets',
+        title: 'No snippets found',
+        language: 'markdown',
+        code: '# No snippets available\n\nUnable to fetch code snippets from recent repositories right now.',
+        repo: orderedRepoNames[0] || 'unknown',
+        path: 'README.md',
+        fullUrl: reposOwner ? `https://github.com/${reposOwner}` : undefined,
+      });
+    }
     
     const result = { snippets };
     
@@ -2095,7 +2153,7 @@ const handleContactEmail = async (req: express.Request, res: express.Response) =
                           <strong>Blake (@epildev)</strong>
                         </p>
                         <p style="margin: 0 0 5px; font-size: 13px; color: #8899aa;">
-                          Senior IT App Developer | Music Producer
+                          DevOps Engineer & Senior App Developer | AI Modelling & App Development | Music Producer
                         </p>
                         <p style="margin: 0; font-size: 13px; color: #8899aa;">
                           Hythe, Southampton, England
@@ -2166,7 +2224,21 @@ app.use('/myhub', (req, res, next) => {
     return next(); // Let API route handlers deal with it (should have already, but safety check)
   }
   // Serve static files for other /myhub/* paths (frontend pages only)
-  const staticHandler = express.static('dist');
+  // Add cache control headers to prevent Cloudflare caching issues
+  const staticHandler = express.static('dist', {
+    setHeaders: (res, path) => {
+      // Don't cache HTML files
+      if (path.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+      // Cache JS/CSS with short TTL to allow updates
+      if (path.endsWith('.js') || path.endsWith('.css')) {
+        res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      }
+    }
+  });
   staticHandler(req, res, next);
 });
 

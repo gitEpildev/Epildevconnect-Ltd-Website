@@ -178,7 +178,7 @@ export default function Messages() {
 
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24 pb-32">
-      <div className="max-w-7xl mx-auto h-[calc(100vh-16rem)]">
+      <div className="max-w-7xl mx-auto h-[calc(100vh-16rem)] min-h-0">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -213,10 +213,10 @@ export default function Messages() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.1 }}
-          className="glass rounded-2xl overflow-hidden h-full flex flex-col lg:flex-row"
+          className="glass rounded-2xl overflow-hidden h-full min-h-0 flex flex-col lg:flex-row"
         >
           {/* Conversation List Sidebar - Hidden on mobile when chat is open */}
-          <div className={`${selectedConversation ? 'hidden lg:flex' : 'flex'} flex-col w-full lg:w-auto h-full`}>
+          <div className={`${selectedConversation ? 'hidden lg:flex' : 'flex'} flex-col w-full lg:w-auto h-full min-h-0`}>
             {conversations.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full p-8 text-center">
                 <MessageSquare className="w-16 h-16 text-quantum-glow opacity-50 mb-4" />
@@ -279,7 +279,7 @@ export default function Messages() {
           </div>
 
           {/* Chat View - Shows on mobile only when conversation selected */}
-          <div className={`${selectedConversation ? 'flex' : 'hidden lg:flex'} flex-col flex-1 h-full`}>
+          <div className={`${selectedConversation ? 'flex' : 'hidden lg:flex'} flex-col flex-1 h-full min-h-0`}>
             <ChatView
               conversation={selectedConversation}
               user={user}

@@ -110,13 +110,13 @@ export default function CodeViewer() {
           </p>
           <div className="flex gap-4">
             <a
-              href="https://github.com/BlakeMcBride1625/8bp-rewards-4.3.2"
+              href="https://github.com/gitEpildev?tab=repositories"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-4 py-2 glass glass-hover rounded-xl font-mono text-sm"
             >
               <Github className="w-4 h-4" />
-              View 8BP Rewards on GitHub
+              View all repositories on GitHub
             </a>
           </div>
         </motion.div>

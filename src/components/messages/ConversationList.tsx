@@ -28,7 +28,7 @@ export default function ConversationList({
   isAdmin,
 }: ConversationListProps) {
   return (
-    <div className="w-full lg:w-80 border-r border-white border-opacity-10 flex flex-col bg-white bg-opacity-5">
+    <div className="w-full lg:w-80 border-r border-white border-opacity-10 flex flex-col bg-white bg-opacity-5 min-h-0">
       {/* Header */}
       <div className="p-4 border-b border-white border-opacity-10">
         <h2 className="font-mono font-semibold text-lg flex items-center gap-2">
@@ -41,7 +41,7 @@ export default function ConversationList({
       </div>
 
       {/* Conversation List */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
         {conversations.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
             <User className="w-12 h-12 mx-auto mb-4 opacity-30" />
