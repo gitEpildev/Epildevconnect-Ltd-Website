@@ -7,12 +7,7 @@ credentials-file: /etc/cloudflared/credentials.json
 # Ingress rules - routes traffic from Cloudflare to your services
 # Order matters: more specific routes should come first
 ingress:
-  # Route /myhub/api/* FIRST (more specific) - when app at /myhub/* makes /api/* calls
-  - hostname: developer.epildevconnect.uk
-    path: /myhub/api/*
-    service: http://localhost:1600
-  
-  # Route all other API calls to backend (backend handles routing)
+  # Route API calls to backend
   - hostname: developer.epildevconnect.uk
     path: /api/*
     service: http://localhost:1600
@@ -22,12 +17,7 @@ ingress:
     path: /auth/*
     service: http://localhost:1600
   
-  # Route /myhub/* to backend (serves frontend static files) - must be last
-  - hostname: developer.epildevconnect.uk
-    path: /myhub/*
-    service: http://localhost:1600
-  
-  # Route root to backend (serves frontend)
+  # Route everything else to backend (serves frontend static files)
   - hostname: developer.epildevconnect.uk
     service: http://localhost:1600
   

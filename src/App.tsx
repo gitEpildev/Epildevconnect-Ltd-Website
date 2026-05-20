@@ -52,12 +52,6 @@ function App() {
       <Layout>
         <AnimatePresence mode="wait">
           <Routes>
-            {/* Redirect old auth paths to /myhub/auth/* */}
-            <Route path="/auth/discord" element={<Navigate to="/myhub/auth/discord" replace />} />
-            <Route path="/auth/callback" element={<Navigate to="/myhub/auth/callback" replace />} />
-            <Route path="/auth/user" element={<Navigate to="/myhub/auth/user" replace />} />
-            <Route path="/auth/logout" element={<Navigate to="/myhub/auth/logout" replace />} />
-            
             <Route path="/" element={<Home />} />
             <Route path="/home" element={<Home />} />
             <Route path="/projects" element={<Projects />} />

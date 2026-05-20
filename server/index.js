@@ -122,7 +122,7 @@ app.get('/test-top-route', (req, res) => {
 });
 // Discord OAuth Configuration
 if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
-    const callbackURL = process.env.DISCORD_REDIRECT_URI || 'http://localhost:1500/myhub/auth/callback';
+    const callbackURL = process.env.DISCORD_REDIRECT_URI || 'http://localhost:1500/auth/callback';
     console.log('[Auth] Discord OAuth configured with callbackURL:', callbackURL);
     passport.use(new DiscordStrategy({
         clientID: process.env.DISCORD_CLIENT_ID,
@@ -169,7 +169,7 @@ const authCallbackHandler = async (req, res) => {
             const blocked = await isUserBlocked(userId);
             if (blocked) {
                 req.logout(() => {
-                    res.redirect('https://developer.epildevconnect.uk/myhub/?error=blocked');
+                    res.redirect('https://developer.epildevconnect.uk/?error=blocked');
                 });
                 return;
             }
@@ -177,7 +177,7 @@ const authCallbackHandler = async (req, res) => {
         // Check if already redirected to prevent loops
         if (req.session?.authRedirected) {
             console.log('[Auth] Already redirected, preventing loop');
-            return res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+            return res.redirect('https://developer.epildevconnect.uk/messages');
         }
         // Mark as redirected to prevent loops
         req.session.authRedirected = true;
@@ -208,7 +208,7 @@ const authCallbackHandler = async (req, res) => {
         });
         console.log('[Auth] Cookie set:', req.sessionID);
         // Redirect to messages page ONCE
-        res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+        res.redirect('https://developer.epildevconnect.uk/messages');
     }
     catch (error) {
         console.error('Error in auth callback:', error);
@@ -216,7 +216,7 @@ const authCallbackHandler = async (req, res) => {
         if (req.session) {
             req.session.authRedirected = false;
         }
-        res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+        res.redirect('https://developer.epildevconnect.uk/messages');
     }
 };
 // Register routes for both /auth and /myhub/auth paths
@@ -224,7 +224,7 @@ app.get('/auth/discord', (req, res, next) => {
     console.log('[Auth] Initiating Discord OAuth flow');
     passport.authenticate('discord')(req, res, next);
 });
-app.get('/myhub/auth/discord', (req, res, next) => {
+app.get('/auth/discord', (req, res, next) => {
     console.log('[Auth] Initiating Discord OAuth flow (myhub path)');
     passport.authenticate('discord')(req, res, next);
 });
@@ -232,7 +232,7 @@ app.get('/auth/callback', (req, res, next) => {
     // Check if already processed to prevent loops
     if (req.session?.authRedirected) {
         console.log('[Auth] Callback already processed, redirecting to messages');
-        return res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+        return res.redirect('https://developer.epildevconnect.uk/messages');
     }
     next();
 }, passport.authenticate('discord', { failureRedirect: 'https://developer.epildevconnect.uk/' }), (req, res, next) => {
@@ -241,14 +241,14 @@ app.get('/auth/callback', (req, res, next) => {
     console.log('[Auth] Is Authenticated:', req.isAuthenticated());
     authCallbackHandler(req, res).catch((err) => {
         console.error('[Auth] Callback handler error:', err);
-        res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+        res.redirect('https://developer.epildevconnect.uk/messages');
     });
 });
-app.get('/myhub/auth/callback', (req, res, next) => {
+app.get('/auth/callback', (req, res, next) => {
     // Check if already processed to prevent loops
     if (req.session?.authRedirected) {
         console.log('[Auth] Callback already processed, redirecting to messages');
-        return res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+        return res.redirect('https://developer.epildevconnect.uk/messages');
     }
     next();
 }, passport.authenticate('discord', { failureRedirect: 'https://developer.epildevconnect.uk/' }), (req, res, next) => {
@@ -257,7 +257,7 @@ app.get('/myhub/auth/callback', (req, res, next) => {
     console.log('[Auth] Is Authenticated:', req.isAuthenticated());
     authCallbackHandler(req, res).catch((err) => {
         console.error('[Auth] Callback handler error:', err);
-        res.redirect('https://developer.epildevconnect.uk/myhub/messages');
+        res.redirect('https://developer.epildevconnect.uk/messages');
     });
 });
 const authUserHandler = (req, res) => {
@@ -283,12 +283,12 @@ const logoutHandler = (req, res) => {
     });
 };
 app.get('/auth/user', authUserHandler);
-app.get('/myhub/auth/user', authUserHandler);
+app.get('/auth/user', authUserHandler);
 // Also register on /myhub/api/* path since frontend uses /myhub/api baseURL
-app.get('/myhub/api/auth/user', authUserHandler);
+app.get('/api/auth/user', authUserHandler);
 app.post('/auth/logout', logoutHandler);
-app.post('/myhub/auth/logout', logoutHandler);
-app.post('/myhub/api/auth/logout', logoutHandler);
+app.post('/auth/logout', logoutHandler);
+app.post('/api/auth/logout', logoutHandler);
 // Middleware to check if user is admin
 const isAdmin = (req, res, next) => {
     if (!req.isAuthenticated()) {
@@ -333,7 +333,7 @@ const handleAdminUsers = async (req, res) => {
 };
 // Register admin users route
 app.get('/api/admin/users', isAdmin, handleAdminUsers);
-app.get('/myhub/api/admin/users', isAdmin, handleAdminUsers);
+app.get('/api/admin/users', isAdmin, handleAdminUsers);
 // Block a user (admin only)
 const handleBlockUser = async (req, res) => {
     try {
@@ -348,7 +348,7 @@ const handleBlockUser = async (req, res) => {
     }
 };
 app.post('/api/admin/users/:userId/block', isAdmin, handleBlockUser);
-app.post('/myhub/api/admin/users/:userId/block', isAdmin, handleBlockUser);
+app.post('/api/admin/users/:userId/block', isAdmin, handleBlockUser);
 // Unblock a user (admin only)
 const handleUnblockUser = async (req, res) => {
     try {
@@ -362,7 +362,7 @@ const handleUnblockUser = async (req, res) => {
     }
 };
 app.post('/api/admin/users/:userId/unblock', isAdmin, handleUnblockUser);
-app.post('/myhub/api/admin/users/:userId/unblock', isAdmin, handleUnblockUser);
+app.post('/api/admin/users/:userId/unblock', isAdmin, handleUnblockUser);
 // Delete a user and all their data (admin only)
 const handleDeleteUser = async (req, res) => {
     try {
@@ -381,7 +381,7 @@ const handleDeleteUser = async (req, res) => {
     }
 };
 app.delete('/api/admin/users/:userId', isAdmin, handleDeleteUser);
-app.delete('/myhub/api/admin/users/:userId', isAdmin, handleDeleteUser);
+app.delete('/api/admin/users/:userId', isAdmin, handleDeleteUser);
 // ========================================
 // CONVERSATION & MESSAGE API ENDPOINTS
 // ========================================
@@ -408,7 +408,7 @@ const handleGetConversations = async (req, res) => {
     }
 };
 app.get('/api/conversations', isAuthenticated, handleGetConversations);
-app.get('/myhub/api/conversations', isAuthenticated, handleGetConversations);
+app.get('/api/conversations', isAuthenticated, handleGetConversations);
 // Get a specific conversation handler
 const handleGetConversation = async (req, res) => {
     try {
@@ -433,7 +433,7 @@ const handleGetConversation = async (req, res) => {
     }
 };
 app.get('/api/conversations/:id', isAuthenticated, handleGetConversation);
-app.get('/myhub/api/conversations/:id', isAuthenticated, handleGetConversation);
+app.get('/api/conversations/:id', isAuthenticated, handleGetConversation);
 // Get messages for a conversation handler
 const handleGetMessages = async (req, res) => {
     try {
@@ -460,7 +460,7 @@ const handleGetMessages = async (req, res) => {
     }
 };
 app.get('/api/conversations/:id/messages', isAuthenticated, handleGetMessages);
-app.get('/myhub/api/conversations/:id/messages', isAuthenticated, handleGetMessages);
+app.get('/api/conversations/:id/messages', isAuthenticated, handleGetMessages);
 // Send a message handler
 const handleSendMessage = async (req, res) => {
     try {
@@ -516,7 +516,7 @@ const handleSendMessage = async (req, res) => {
                 const adminUserId = process.env.ADMIN_DISCORD_ID;
                 if (adminUserId) {
                     const adminUser = await discordBot.users.fetch(adminUserId);
-                    const conversationUrl = `https://developer.epildevconnect.uk/myhub/messages`;
+                    const conversationUrl = `https://developer.epildevconnect.uk/messages`;
                     await adminUser.send(`💬 **New Message in Conversation**\n\n` +
                         `**From:** ${userName} (${userId})\n` +
                         `**Conversation ID:** ${id}\n` +
@@ -541,7 +541,7 @@ const handleSendMessage = async (req, res) => {
 // Register on both app and apiRouter to ensure they're matched
 apiRouter.post('/conversations/:id/messages', messageLimiter, isAuthenticated, handleSendMessage);
 app.post('/api/conversations/:id/messages', messageLimiter, isAuthenticated, handleSendMessage);
-app.post('/myhub/api/conversations/:id/messages', messageLimiter, isAuthenticated, handleSendMessage);
+app.post('/api/conversations/:id/messages', messageLimiter, isAuthenticated, handleSendMessage);
 // Create a new conversation handler (or get existing)
 const handleCreateConversation = async (req, res) => {
     try {
@@ -557,7 +557,7 @@ const handleCreateConversation = async (req, res) => {
             try {
                 if (adminId) {
                     const adminUser = await discordBot.users.fetch(adminId);
-                    const conversationUrl = `https://developer.epildevconnect.uk/myhub/messages`;
+                    const conversationUrl = `https://developer.epildevconnect.uk/messages`;
                     await adminUser.send(`🔔 **New Conversation Started**\n\n` +
                         `**User:** ${userName} (${userId})\n` +
                         `**Conversation ID:** ${conversation.id}\n` +
@@ -579,7 +579,7 @@ const handleCreateConversation = async (req, res) => {
     }
 };
 app.post('/api/conversations', isAuthenticated, handleCreateConversation);
-app.post('/myhub/api/conversations', isAuthenticated, handleCreateConversation);
+app.post('/api/conversations', isAuthenticated, handleCreateConversation);
 // Delete a conversation handler (admin only)
 const handleDeleteConversation = async (req, res) => {
     try {
@@ -604,7 +604,7 @@ const handleDeleteConversation = async (req, res) => {
 // Register on apiRouter as well to ensure they're matched
 apiRouter.delete('/conversations/:id', isAdmin, handleDeleteConversation);
 app.delete('/api/conversations/:id', isAdmin, handleDeleteConversation);
-app.delete('/myhub/api/conversations/:id', isAdmin, handleDeleteConversation);
+app.delete('/api/conversations/:id', isAdmin, handleDeleteConversation);
 // Close a conversation handler (admin only)
 const handleCloseConversation = async (req, res) => {
     try {
@@ -637,7 +637,7 @@ const handleCloseConversation = async (req, res) => {
 // Register on apiRouter as well to ensure they're matched - MUST come before app.use('/myhub/api')
 apiRouter.patch('/conversations/:id/close', isAdmin, handleCloseConversation);
 app.patch('/api/conversations/:id/close', isAdmin, handleCloseConversation);
-app.patch('/myhub/api/conversations/:id/close', isAdmin, handleCloseConversation);
+app.patch('/api/conversations/:id/close', isAdmin, handleCloseConversation);
 // Reopen a conversation handler (admin only)
 const handleReopenConversation = async (req, res) => {
     try {
@@ -653,7 +653,7 @@ const handleReopenConversation = async (req, res) => {
 // Register on apiRouter as well to ensure they're matched
 apiRouter.patch('/conversations/:id/reopen', isAdmin, handleReopenConversation);
 app.patch('/api/conversations/:id/reopen', isAdmin, handleReopenConversation);
-app.patch('/myhub/api/conversations/:id/reopen', isAdmin, handleReopenConversation);
+app.patch('/api/conversations/:id/reopen', isAdmin, handleReopenConversation);
 // Seed test messages (admin only)
 const handleSeedTestMessages = async (req, res) => {
     try {
@@ -712,7 +712,7 @@ const handleSeedTestMessages = async (req, res) => {
     }
 };
 app.post('/api/admin/seed-test-messages', isAuthenticated, handleSeedTestMessages);
-app.post('/myhub/api/admin/seed-test-messages', isAuthenticated, handleSeedTestMessages);
+app.post('/api/admin/seed-test-messages', isAuthenticated, handleSeedTestMessages);
 // API Proxy Routes
 // apiRouter is already declared above - now register routes on it
 // Lanyard route
@@ -754,7 +754,7 @@ app.get('/test-api-route', (req, res) => {
 // Also register directly on app for /myhub/api/* paths BEFORE static middleware
 // CRITICAL: These routes MUST be defined before app.use('/myhub', ...) below
 // NOTE: System specs route is registered at the top of the file
-app.get('/myhub/api/lanyard/:userId', (req, res) => {
+app.get('/api/lanyard/:userId', (req, res) => {
     console.log('[BACKEND] DIRECT /myhub/api/lanyard route matched! path:', req.path);
     return handleLanyard(req, res);
 });
@@ -861,7 +861,7 @@ const handleDiscordProfile = async (req, res) => {
     }
 };
 apiRouter.get('/discord/profile/:userId', handleDiscordProfile);
-app.get('/myhub/api/discord/profile/:userId', handleDiscordProfile);
+app.get('/api/discord/profile/:userId', handleDiscordProfile);
 const handleLastFm = async (req, res) => {
     console.log('[BACKEND] /api/lastfm/recent hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
     try {
@@ -902,7 +902,7 @@ const handleLastFm = async (req, res) => {
     }
 };
 apiRouter.get('/lastfm/recent', handleLastFm);
-app.get('/myhub/api/lastfm/recent', handleLastFm);
+app.get('/api/lastfm/recent', handleLastFm);
 const handleWakaTime = async (req, res) => {
     console.log('[BACKEND] /api/wakatime/stats hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
     try {
@@ -1000,7 +1000,7 @@ const handleWakaTime = async (req, res) => {
     }
 };
 apiRouter.get('/wakatime/stats', handleWakaTime);
-app.get('/myhub/api/wakatime/stats', handleWakaTime);
+app.get('/api/wakatime/stats', handleWakaTime);
 // GitHub repositories endpoint
 const handleGitHubRepos = async (req, res) => {
     console.log('[BACKEND] /api/github/repos hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
@@ -1202,7 +1202,7 @@ const handleGitHubRepos = async (req, res) => {
                 demoUrl = repo.homepage;
             }
             else if (repo.name === 'MyLink') {
-                demoUrl = 'https://developer.epildevconnect.uk/myhub/';
+                demoUrl = 'https://developer.epildevconnect.uk/';
             }
             else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
                 // For 8bp-rewards projects, use GitHub repo URL as demo
@@ -1357,7 +1357,7 @@ const handleGitHubRepos = async (req, res) => {
     }
 };
 apiRouter.get('/github/repos', handleGitHubRepos);
-app.get('/myhub/api/github/repos', handleGitHubRepos);
+app.get('/api/github/repos', handleGitHubRepos);
 // Cache clear endpoint - forces fresh fetch from GitHub
 const handleClearCache = async (req, res) => {
     const pattern = req.query.pattern;
@@ -1376,7 +1376,7 @@ const handleClearCache = async (req, res) => {
     }
 };
 apiRouter.post('/cache/clear', handleClearCache);
-app.post('/myhub/api/cache/clear', handleClearCache);
+app.post('/api/cache/clear', handleClearCache);
 // GitHub code snippets endpoint
 const handleGitHubCodeSnippets = async (req, res) => {
     console.log('[BACKEND] /api/github/code-snippets hit');
@@ -1575,7 +1575,7 @@ const handleGitHubCodeSnippets = async (req, res) => {
     }
 };
 apiRouter.get('/github/code-snippets', handleGitHubCodeSnippets);
-app.get('/myhub/api/github/code-snippets', handleGitHubCodeSnippets);
+app.get('/api/github/code-snippets', handleGitHubCodeSnippets);
 // System Specs endpoint - moved to be registered with other explicit routes
 // Handler definition:
 async function handleSystemSpecs(req, res) {
@@ -1653,45 +1653,16 @@ async function handleSystemSpecs(req, res) {
 // CRITICAL: Register routes IMMEDIATELY after handler definition (EXACT same pattern as wakatime/lastfm)
 apiRouter.get('/system/specs', handleSystemSpecs);
 // Register EXACTLY like wakatime - inline handler to ensure it works
-app.get('/myhub/api/system/specs', (req, res, next) => {
+app.get('/api/system/specs', (req, res, next) => {
     console.log('[SystemSpecs Route] ✅ EXPRESS MATCHED!');
     return handleSystemSpecs(req, res).catch(next);
 });
 // CRITICAL: Register explicit /myhub/api/* routes BEFORE app.all to ensure they match first
-app.get('/myhub/api/auth/user', authUserHandler);
-app.post('/myhub/api/auth/logout', logoutHandler);
+app.get('/api/auth/user', authUserHandler);
+app.post('/api/auth/logout', logoutHandler);
 // Note: handleContactEmail route registered after function definition below
 // CRITICAL: Mount API router for /api/* paths
 app.use('/api', apiRouter);
-// CRITICAL: Handle /myhub/api/* routes - forward to apiRouter (catch-all, must be LAST)
-app.all('/myhub/api/*', (req, res, next) => {
-    console.log('[app.all] ✅ CALLED! path:', req.path, 'originalUrl:', req.originalUrl);
-    // Handle system specs FIRST - direct call since explicit route isn't matching
-    if (req.path === '/myhub/api/system/specs' || req.originalUrl === '/myhub/api/system/specs' ||
-        req.path.includes('system/specs') || req.originalUrl.includes('system/specs')) {
-        console.log('[app.all] ✅ System specs matched, calling handler');
-        return handleSystemSpecs(req, res).catch(next);
-    }
-    // For all other routes, modify url and forward to apiRouter
-    const originalUrl = req.url;
-    const originalOriginalUrl = req.originalUrl;
-    // Strip /myhub/api from url
-    req.url = req.url.replace('/myhub/api', '') || '/';
-    if (req.originalUrl) {
-        const modifiedOriginalUrl = req.originalUrl.replace('/myhub/api', '') || '/';
-        req.originalUrl = modifiedOriginalUrl;
-    }
-    // Forward to apiRouter
-    apiRouter(req, res, (err) => {
-        // Restore original values
-        req.url = originalUrl;
-        req.originalUrl = originalOriginalUrl;
-        if (err) {
-            console.log('[app.all /myhub/api/*] apiRouter error:', err);
-        }
-        next(err);
-    });
-});
 function formatDuration(seconds) {
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -1889,63 +1860,31 @@ const handleContactEmail = async (req, res) => {
     }
 };
 // Register email route AFTER function definition
-app.post('/myhub/api/contact/email', handleContactEmail);
+app.post('/api/contact/email', handleContactEmail);
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
-// CRITICAL: Serve static files ONLY for non-API paths
-// Use a more restrictive path pattern that excludes /api and /auth
-// CRITICAL: This middleware MUST run AFTER all API routes
-app.use('/myhub', (req, res, next) => {
-    // CRITICAL: Skip static file serving for API/auth paths
-    // Check both req.path AND req.originalUrl to catch all API paths
-    const path = req.path;
-    const originalUrl = req.originalUrl;
-    const isApiPath = (path && (path.startsWith('/api') || path.startsWith('/auth'))) ||
-        (originalUrl && (originalUrl.startsWith('/myhub/api') || originalUrl.startsWith('/myhub/auth') ||
-            originalUrl.startsWith('/api') || originalUrl.startsWith('/auth')));
-    if (isApiPath) {
-        console.log('[BACKEND] Static middleware skipping API path:', path, 'originalUrl:', originalUrl);
-        return next(); // Let API route handlers deal with it (should have already, but safety check)
-    }
-    // Serve static files for other /myhub/* paths (frontend pages only)
-    // Add cache control headers to prevent Cloudflare caching issues
-    const staticHandler = express.static('dist', {
-        setHeaders: (res, path) => {
-            // Don't cache HTML files
-            if (path.endsWith('.html')) {
-                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-                res.setHeader('Pragma', 'no-cache');
-                res.setHeader('Expires', '0');
-            }
-            // Cache JS/CSS with short TTL to allow updates
-            if (path.endsWith('.js') || path.endsWith('.css')) {
-                res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-            }
+// Serve static assets (JS, CSS, images) - must come AFTER all API routes
+app.use(express.static('dist', {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
         }
-    });
-    staticHandler(req, res, next);
-});
-// Handle client-side routing - send index.html for /myhub routes (but not /myhub/api/* or /myhub/auth/*)
-// CRITICAL: This MUST come AFTER all API/auth routes to avoid intercepting them
-app.get('/myhub/*', (req, res, next) => {
-    // CRITICAL: Double-check - skip API/auth paths even though they should have been handled above
-    const path = req.path;
-    const originalUrl = req.originalUrl;
-    const isApiOrAuth = (path && (path.startsWith('/myhub/api') || path.startsWith('/myhub/auth') ||
-        path.startsWith('/api') || path.startsWith('/auth'))) ||
-        (originalUrl && (originalUrl.startsWith('/myhub/api') || originalUrl.startsWith('/myhub/auth') ||
-            originalUrl.startsWith('/api') || originalUrl.startsWith('/auth')));
-    if (isApiOrAuth) {
-        console.log('[BACKEND] Client-side routing skipping API/auth path:', path, 'originalUrl:', originalUrl);
-        return next(); // Let API routes or 404 handler deal with it
+        if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+            res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+        }
+    }
+}));
+// Handle client-side routing - send index.html for all non-API/auth paths
+app.get('*', (req, res, next) => {
+    const p = req.path;
+    if (p.startsWith('/api') || p.startsWith('/auth') || p.startsWith('/health')) {
+        return next();
     }
     res.sendFile('index.html', { root: 'dist' });
-});
-// Redirect root to /myhub/home
-app.get('/', (req, res) => {
-    res.redirect('/myhub/home');
 });
 app.use((err, req, res, next) => {
     console.error('Global error handler:', err);

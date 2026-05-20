@@ -4,16 +4,15 @@ import axios from 'axios';
 // Backend handles both /api/* and /myhub/api/*, but Cloudflare routes /myhub/* to backend
 const getAbsoluteBaseURL = () => {
   if (typeof window !== 'undefined') {
-    const base = `${window.location.protocol}//${window.location.host}/myhub/api`;
+    const base = `${window.location.protocol}//${window.location.host}/api`;
     console.log('[API] baseURL calculated:', base, 'from:', window.location.href);
     return base;
   }
-  return '/myhub/api'; // Fallback for SSR (shouldn't happen)
+  return '/api';
 };
 
-// Create axios instance - baseURL will be set dynamically by interceptor
 const api = axios.create({
-  baseURL: '/myhub/api', // Initial value, will be overridden by interceptor
+  baseURL: '/api',
   withCredentials: true,
   // Let axios handle status codes normally - throw on 4xx/5xx
   validateStatus: (status) => status < 400,

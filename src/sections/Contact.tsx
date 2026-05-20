@@ -274,7 +274,7 @@ export default function Contact() {
                     You're not logged in. Messages will be sent via email.
                   </p>
                   <a
-                    href="/myhub/auth/discord"
+                    href="/auth/discord"
                     className="inline-flex items-center gap-2 px-4 py-2 bg-[#5865F2] hover:bg-[#4752C4] rounded-lg transition-colors text-sm font-mono"
                   >
                     <svg

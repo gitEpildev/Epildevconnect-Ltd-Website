@@ -5,7 +5,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 
 const api = axios.create({
-  baseURL: '/myhub', // Use /myhub base to match routing
+  baseURL: '',
   withCredentials: true,
 });
 
@@ -37,7 +37,7 @@ export default function AdminDashboard() {
       const authResponse = await api.get('/auth/user');
       if (!authResponse.data.user) {
         // Redirect to Discord login
-        window.location.href = '/myhub/auth/discord';
+        window.location.href = '/auth/discord';
         return;
       }
 
@@ -50,7 +50,7 @@ export default function AdminDashboard() {
         setError('Access Denied: Admin privileges required');
         setIsAdmin(false);
       } else if (error.response?.status === 401) {
-        window.location.href = '/myhub/auth/discord';
+        window.location.href = '/auth/discord';
       } else {
         setError('Failed to load admin dashboard');
       }
@@ -75,7 +75,7 @@ export default function AdminDashboard() {
 
   const handleSeedTestMessages = async () => {
     try {
-      const response = await api.post('/myhub/api/admin/seed-test-messages');
+      const response = await api.post('/api/admin/seed-test-messages');
       alert(response.data.message || 'Test messages added successfully!');
       // Optionally refresh page or show success message
     } catch (error) {

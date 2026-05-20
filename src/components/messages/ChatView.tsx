@@ -5,7 +5,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 
 const api = axios.create({
-  baseURL: '/myhub', // Use /myhub base to match routing
+  baseURL: '',
   withCredentials: true,
 });
 

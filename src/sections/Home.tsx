@@ -33,9 +33,6 @@ export default function Home() {
           transition={{ duration: 0.6 }}
           className="mb-12 text-center lg:text-left"
         >
-          <h1 className="hero-title text-5xl sm:text-6xl lg:text-8xl font-extrabold mb-4 leading-[0.9] tracking-tighter">
-            MY HUB
-          </h1>
           <p className="text-base sm:text-xl text-gray-300 font-mono">
             Real-time command centre by{' '}
             <span className="text-quantum-glow font-semibold">@epildev</span>

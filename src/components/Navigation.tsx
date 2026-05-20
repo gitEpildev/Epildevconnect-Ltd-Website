@@ -41,7 +41,7 @@ export default function Navigation() {
 
   const checkAdminStatus = async () => {
     try {
-      const response = await axios.get('/myhub/api/auth/user', {
+      const response = await axios.get('/api/auth/user', {
         withCredentials: true,
       });
       

@@ -6,7 +6,7 @@ import ChatView from '../components/messages/ChatView';
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '/myhub', // Use /myhub base to match routing
+  baseURL: '',
   withCredentials: true,
 });
 
@@ -52,7 +52,7 @@ export default function Messages() {
         setUser(response.data.user);
         // Remove auth=success query param if present
         if (window.location.search.includes('auth=success')) {
-          window.history.replaceState({}, '', '/myhub/messages');
+          window.history.replaceState({}, '', '/messages');
         }
       }
       // Always stop loading - don't redirect, don't retry
@@ -131,7 +131,7 @@ export default function Messages() {
   const handleLogout = async () => {
     try {
       await api.post('/auth/logout');
-      window.location.href = '/myhub/home';
+      window.location.href = '/home';
     } catch (error) {
       console.error('Failed to logout:', error);
     }
@@ -164,7 +164,7 @@ export default function Messages() {
             You need to be logged in to view messages.
           </p>
           <motion.button
-            onClick={() => window.location.href = '/myhub/auth/discord'}
+            onClick={() => window.location.href = '/auth/discord'}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="px-6 py-3 rounded-xl bg-quantum-glow text-dark-900 font-mono font-semibold hover:opacity-90 transition-all"

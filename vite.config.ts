@@ -12,8 +12,7 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
-    // Base URL - using /myhub/ path for all pages
-    base: '/myhub/',
+    base: '/',
     server: {
       host: true, // Expose to network for testing real IPs
       port: parseInt(env.FRONTEND_PORT || '1500'),
