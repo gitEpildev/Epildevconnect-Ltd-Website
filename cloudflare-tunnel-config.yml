@@ -1,7 +1,7 @@
 # Cloudflare Tunnel Configuration
 # This file is used by cloudflared to route traffic to your local services
 
-tunnel: 143de656-3edc-4cfe-9463-50fb6b354318
+tunnel: afed4a3e-e7c1-476f-8dee-2fc66538150d
 credentials-file: /etc/cloudflared/credentials.json
 
 # Ingress rules - routes traffic from Cloudflare to your services
