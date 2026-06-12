@@ -3,6 +3,7 @@ import { ExternalLink, Github, FolderGit2, Loader2, Star, GitFork } from 'lucide
 import { useState, useEffect } from 'react';
 import { fetchGitHubRepos } from '../utils/api';
 import { useTilt } from '../utils/useTilt';
+import PageHeader from '../components/PageHeader';
 
 interface Project {
   id: number;
@@ -168,23 +169,13 @@ export default function Projects() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12"
-        >
-          <div className="flex items-center gap-4 mb-4">
-            <FolderGit2 className="w-9 h-9 text-quantum-glow" />
-            <h1 className="text-5xl lg:text-7xl font-bold section-heading tracking-tight">
-              Projects
-            </h1>
-          </div>
-          <p className="text-lg text-gray-400 font-mono">
-            A collection of my work and contributions
-          </p>
-        </motion.div>
+        <PageHeader
+          icon={FolderGit2}
+          kicker="Selected work"
+          title="Things we"
+          accent="built."
+          description="From Minecraft plugins and Discord bots to full web platforms. Every project here is designed, built and shipped by us, and most of them are open source."
+        />
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">

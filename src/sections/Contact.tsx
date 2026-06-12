@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, Send, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { getAuthUser, sendDiscordMessage, sendEmail } from '../utils/api';
+import PageHeader from '../components/PageHeader';
 
 export default function Contact() {
   const [user, setUser] = useState<any>(null);
@@ -81,24 +82,13 @@ export default function Contact() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12 text-center"
-        >
-          <div className="flex items-center justify-center gap-4 mb-4">
-            <Mail className="w-9 h-9 text-quantum-glow" />
-            <h1 className="text-5xl lg:text-7xl font-bold section-heading tracking-tight">
-              Get In Touch
-            </h1>
-          </div>
-          <p className="text-lg text-gray-400 font-mono">
-            Have a question or want to work together?
-          </p>
-        </motion.div>
+        <PageHeader
+          icon={Mail}
+          kicker="No bots, no sales reps"
+          title="Let's"
+          accent="talk."
+          description="Got a project in mind, a server to fix, or just a question? Send a message and you'll hear back from me directly."
+        />
 
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Contact Form */}

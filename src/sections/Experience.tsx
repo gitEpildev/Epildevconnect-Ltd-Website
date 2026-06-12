@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Briefcase, Calendar, MapPin } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 const currentYear = new Date().getFullYear();
 
@@ -47,23 +48,13 @@ export default function Experience() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-5xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12"
-        >
-          <div className="flex items-center gap-4 mb-4">
-            <Briefcase className="w-9 h-9 text-quantum-glow" />
-            <h1 className="text-5xl lg:text-7xl font-bold section-heading tracking-tight">
-              Experience
-            </h1>
-          </div>
-          <p className="text-lg text-gray-400 font-mono">
-            My professional journey and milestones
-          </p>
-        </motion.div>
+        <PageHeader
+          icon={Briefcase}
+          kicker="Track record"
+          title="The journey"
+          accent="so far."
+          description="The roles, projects and milestones that shaped how we build today."
+        />
 
         <div className="relative">
           {/* Timeline line with animated gradient */}

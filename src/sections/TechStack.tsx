@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Wrench, ExternalLink, Code2, Database, Terminal, Globe, Server, Layers, Music } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 interface TechItem {
   name: string;
@@ -130,23 +131,13 @@ export default function TechStack() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12"
-        >
-          <div className="flex items-center gap-4 mb-4">
-            <Wrench className="w-9 h-9 text-quantum-glow" />
-            <h1 className="text-5xl lg:text-7xl font-bold section-heading tracking-tight">
-              Tech Stack
-            </h1>
-          </div>
-          <p className="text-lg text-gray-400 font-mono">
-            Tools and technologies I work with
-          </p>
-        </motion.div>
+        <PageHeader
+          icon={Wrench}
+          kicker="Tools of the trade"
+          title="The"
+          accent="stack."
+          description="The languages, frameworks and infrastructure behind everything we ship. Chosen because they work, kept because they last."
+        />
 
         <div className="space-y-6">
           {Object.entries(techStack).map(([category, items], categoryIndex) => {

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTilt } from '../utils/useTilt';
+import PageHeader from '../components/PageHeader';
 
 interface Service {
   title: string;
@@ -202,24 +203,13 @@ export default function Services() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12"
-        >
-          <div className="flex items-center gap-4 mb-4">
-            <Sparkles className="w-9 h-9 text-quantum-glow" />
-            <h1 className="text-5xl lg:text-7xl font-bold section-heading tracking-tight">
-              Services
-            </h1>
-          </div>
-          <p className="text-lg text-gray-400 font-mono max-w-3xl">
-            Epildevconnect Ltd offers custom development, hosting and automation for creators,
-            businesses and gaming communities. Everything below is delivered, documented and supported by me directly.
-          </p>
-        </motion.div>
+        <PageHeader
+          icon={Sparkles}
+          kicker="What we do"
+          title="Built for"
+          accent="you."
+          description="Custom development, hosting and automation for creators, businesses and gaming communities. Everything below is delivered, documented and supported by me directly."
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {services.map((service, index) => (

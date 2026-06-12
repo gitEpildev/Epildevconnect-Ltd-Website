@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Code2, Copy, Check, Github, ExternalLink, Loader2, FileCode } from 'lucide-react';
 import { Highlight, themes } from 'prism-react-renderer';
 import { fetchGitHubCodeSnippets } from '../utils/api';
+import PageHeader from '../components/PageHeader';
 
 interface CodeSnippet {
   id: string;
@@ -111,22 +112,13 @@ export default function CodeViewer() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-10"
+        <PageHeader
+          icon={Code2}
+          kicker="Straight from GitHub"
+          title="Code"
+          accent="Viewer"
+          description="Real source code, pulled live from our public repositories. No mock-ups and no snippets written for show. What you read here is what actually runs."
         >
-          <div className="flex items-center gap-4 mb-4">
-            <Code2 className="w-9 h-9 text-quantum-glow" />
-            <h1 className="text-5xl lg:text-7xl font-bold section-heading tracking-tight">
-              Code Viewer
-            </h1>
-          </div>
-          <p className="text-lg text-gray-400 font-mono mb-5">
-            Explore code samples and implementations
-          </p>
           <a
             href="https://github.com/gitEpildev?tab=repositories"
             target="_blank"
@@ -136,7 +128,7 @@ export default function CodeViewer() {
             <Github className="w-4 h-4" />
             View all repositories on GitHub
           </a>
-        </motion.div>
+        </PageHeader>
 
         <div className="grid lg:grid-cols-4 gap-5">
           {/* Sidebar */}

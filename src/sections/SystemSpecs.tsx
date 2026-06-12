@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Monitor, Server, Cpu, MemoryStick, HardDrive, Package, Activity, Layers } from 'lucide-react';
 import { fetchSystemSpecs } from '../utils/api';
 import { usePolling } from '../utils/hooks';
+import PageHeader from '../components/PageHeader';
 
 function CircularGauge({ value, max, label, unit, color = '#00d9ff' }: {
   value: number; max: number; label: string; unit: string; color?: string;
@@ -110,23 +111,13 @@ export default function SystemSpecs() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12"
-        >
-          <div className="flex items-center gap-4 mb-4">
-            <Package className="w-9 h-9 text-quantum-glow" />
-            <h1 className="text-5xl lg:text-7xl font-bold section-heading tracking-tight">
-              System Specs
-            </h1>
-          </div>
-          <p className="text-lg text-gray-400 font-mono">
-            Hardware and live system metrics
-          </p>
-        </motion.div>
+        <PageHeader
+          icon={Package}
+          kicker="The hardware"
+          title="Powered"
+          accent="by this."
+          description="The machines behind everything we host and run, with live usage straight from the metal. The gauges below update every few seconds."
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Mac */}
