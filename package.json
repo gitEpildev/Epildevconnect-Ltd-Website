@@ -1,8 +1,8 @@
 {
-  "name": "myhub",
-  "version": "1.0.0",
+  "name": "epildevconnect-site",
+  "version": "2.0.0",
   "type": "module",
-  "description": "MY HUB - Real-time personal dashboard by @epildev",
+  "description": "Epildevconnect Ltd - business website with live dashboard, services and project showcase",
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "dev:frontend": "vite --port $npm_package_config_frontendPort",

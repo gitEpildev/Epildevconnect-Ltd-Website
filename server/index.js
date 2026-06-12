@@ -101,7 +101,7 @@ function clearCache(pattern) {
     return count;
 }
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'myhub-secret-key',
+    secret: process.env.SESSION_SECRET || 'epildevconnect-secret-key',
     resave: true, // Changed to true to ensure session is saved on every request
     saveUninitialized: false,
     proxy: true, // Trust proxy for session cookies
@@ -772,7 +772,7 @@ const handleDiscordProfile = async (req, res) => {
         const userResponse = await axios.get(`https://discord.com/api/v10/users/${userId}`, {
             headers: {
                 'Authorization': `Bot ${botToken}`,
-                'User-Agent': 'MY-HUB-Dashboard/1.0'
+                'User-Agent': 'Epildevconnect-Site/2.0'
             }
         });
         const userData = userResponse.data;
@@ -1009,344 +1009,351 @@ const handleWakaTime = async (req, res) => {
 };
 apiRouter.get('/wakatime/stats', handleWakaTime);
 app.get('/api/wakatime/stats', handleWakaTime);
-// GitHub repositories endpoint
-const handleGitHubRepos = async (req, res) => {
-    console.log('[BACKEND] /api/github/repos hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
-    // Check cache first
-    const cacheKey = 'github_repos';
-    const cached = getCached(cacheKey);
-    if (cached) {
-        console.log('[BACKEND] Returning cached GitHub repos data');
-        return res.json(cached);
+// GitHub repositories: builds the full project list from the GitHub API.
+// Used by the handler below with stale-while-revalidate caching.
+async function buildGitHubReposData() {
+    const githubUsername = process.env.GITHUB_USERNAME || 'gitEpildev';
+    const githubToken = process.env.GITHUB_TOKEN; // Optional, for higher rate limits
+    if (!githubToken) {
+        console.warn('[BACKEND] ⚠️ GITHUB_TOKEN not set! Rate limits will be lower (60 requests/hour vs 5000/hour with token)');
     }
-    try {
-        const githubUsername = process.env.GITHUB_USERNAME || 'gitEpildev';
-        const githubToken = process.env.GITHUB_TOKEN; // Optional, for higher rate limits
-        if (!githubToken) {
-            console.warn('[BACKEND] ⚠️ GITHUB_TOKEN not set! Rate limits will be lower (60 requests/hour vs 5000/hour with token)');
+    const headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Epildevconnect-Site/2.0'
+    };
+    // Topics endpoint requires different Accept header
+    const topicsHeaders = {
+        'Accept': 'application/vnd.github.mercy-preview+json',
+        'User-Agent': 'Epildevconnect-Site/2.0'
+    };
+    if (githubToken) {
+        headers['Authorization'] = `token ${githubToken}`;
+        topicsHeaders['Authorization'] = `token ${githubToken}`;
+    }
+    // Fetch public repositories
+    const response = await axios.get(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=100&type=public`, { headers });
+    const repos = response.data || [];
+    console.log(`[BACKEND] Fetched ${repos.length} repositories from GitHub`);
+    // Fetch topics and languages for each repository (GitHub API requires separate calls)
+    // Add small delay between requests to avoid rate limiting
+    const reposWithTopics = await Promise.all(repos.map(async (repo, index) => {
+        // Add delay to avoid hitting rate limits too quickly
+        if (index > 0 && index % 5 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay every 5 repos
         }
-        const headers = {
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'MY-HUB-Dashboard/1.0'
-        };
-        // Topics endpoint requires different Accept header
-        const topicsHeaders = {
-            'Accept': 'application/vnd.github.mercy-preview+json',
-            'User-Agent': 'MY-HUB-Dashboard/1.0'
-        };
-        if (githubToken) {
-            headers['Authorization'] = `token ${githubToken}`;
-            topicsHeaders['Authorization'] = `token ${githubToken}`;
+        try {
+            // Check cache for topics
+            const topicsCacheKey = `github_topics_${repo.name}`;
+            let topics = getCached(topicsCacheKey);
+            if (!topics) {
+                const topicsResponse = await axios.get(`https://api.github.com/repos/${githubUsername}/${repo.name}/topics`, { headers: topicsHeaders });
+                topics = topicsResponse.data?.names || [];
+                setCached(topicsCacheKey, topics);
+            }
+            repo.topics = topics;
+            if (repo.topics.length > 0) {
+                console.log(`[BACKEND] Repo ${repo.name} has topics:`, repo.topics.join(', '));
+            }
         }
-        // Fetch public repositories
-        const response = await axios.get(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=100&type=public`, { headers });
-        const repos = response.data || [];
-        console.log(`[BACKEND] Fetched ${repos.length} repositories from GitHub`);
-        // Fetch topics and languages for each repository (GitHub API requires separate calls)
-        // Add small delay between requests to avoid rate limiting
-        const reposWithTopics = await Promise.all(repos.map(async (repo, index) => {
-            // Add delay to avoid hitting rate limits too quickly
-            if (index > 0 && index % 5 === 0) {
-                await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay every 5 repos
+        catch (err) {
+            // If topics fetch fails, continue without topics
+            if (err?.response?.status === 403 || err?.response?.status === 429) {
+                console.warn(`[BACKEND] Rate limited while fetching topics for ${repo.name}`);
             }
-            try {
-                // Check cache for topics
-                const topicsCacheKey = `github_topics_${repo.name}`;
-                let topics = getCached(topicsCacheKey);
-                if (!topics) {
-                    const topicsResponse = await axios.get(`https://api.github.com/repos/${githubUsername}/${repo.name}/topics`, { headers: topicsHeaders });
-                    topics = topicsResponse.data?.names || [];
-                    setCached(topicsCacheKey, topics);
-                }
-                repo.topics = topics;
-                if (repo.topics.length > 0) {
-                    console.log(`[BACKEND] Repo ${repo.name} has topics:`, repo.topics.join(', '));
-                }
+            else {
+                console.warn(`[BACKEND] Failed to fetch topics for ${repo.name}:`, err?.response?.status || err?.message);
             }
-            catch (err) {
-                // If topics fetch fails, continue without topics
-                if (err?.response?.status === 403 || err?.response?.status === 429) {
-                    console.warn(`[BACKEND] Rate limited while fetching topics for ${repo.name}`);
-                }
-                else {
-                    console.warn(`[BACKEND] Failed to fetch topics for ${repo.name}:`, err?.response?.status || err?.message);
-                }
-                repo.topics = [];
+            repo.topics = [];
+        }
+        try {
+            // Check cache for languages
+            const languagesCacheKey = `github_languages_${repo.name}`;
+            let languages = getCached(languagesCacheKey);
+            if (!languages) {
+                const languagesResponse = await axios.get(`https://api.github.com/repos/${githubUsername}/${repo.name}/languages`, { headers });
+                languages = languagesResponse.data || {};
+                setCached(languagesCacheKey, languages);
             }
-            try {
-                // Check cache for languages
-                const languagesCacheKey = `github_languages_${repo.name}`;
-                let languages = getCached(languagesCacheKey);
-                if (!languages) {
-                    const languagesResponse = await axios.get(`https://api.github.com/repos/${githubUsername}/${repo.name}/languages`, { headers });
-                    languages = languagesResponse.data || {};
-                    setCached(languagesCacheKey, languages);
-                }
-                repo.languages = languages;
-                const languageNames = Object.keys(repo.languages);
-                if (languageNames.length > 0) {
-                    console.log(`[BACKEND] Repo ${repo.name} has languages:`, languageNames.join(', '));
+            repo.languages = languages;
+            const languageNames = Object.keys(repo.languages);
+            if (languageNames.length > 0) {
+                console.log(`[BACKEND] Repo ${repo.name} has languages:`, languageNames.join(', '));
+            }
+        }
+        catch (err) {
+            // If languages fetch fails, continue without languages
+            if (err?.response?.status === 403 || err?.response?.status === 429) {
+                console.warn(`[BACKEND] Rate limited while fetching languages for ${repo.name}`);
+            }
+            else {
+                console.warn(`[BACKEND] Failed to fetch languages for ${repo.name}:`, err?.response?.status || err?.message);
+            }
+            repo.languages = {};
+        }
+        // Fetch README for OpenAI context (optional, don't fail if missing)
+        try {
+            const readmeCacheKey = `github_readme_${repo.name}`;
+            let readmeContent = getCached(readmeCacheKey);
+            if (!readmeContent) {
+                const readmeResponse = await axios.get(`https://api.github.com/repos/${githubUsername}/${repo.name}/readme`, { headers });
+                if (readmeResponse.data?.content) {
+                    // Decode base64 content and extract first 500 characters
+                    const fullContent = Buffer.from(readmeResponse.data.content, 'base64').toString('utf-8');
+                    readmeContent = fullContent.substring(0, 500).replace(/\n/g, ' ').trim();
+                    setCached(readmeCacheKey, readmeContent, 10 * 60 * 1000); // 10 minutes cache
                 }
             }
-            catch (err) {
-                // If languages fetch fails, continue without languages
-                if (err?.response?.status === 403 || err?.response?.status === 429) {
-                    console.warn(`[BACKEND] Rate limited while fetching languages for ${repo.name}`);
+            repo.readmeExcerpt = readmeContent || undefined;
+        }
+        catch (err) {
+            // README is optional, continue without it
+            if (err?.response?.status !== 404) {
+                // Only log non-404 errors (404 means no README, which is fine)
+                if (err?.response?.status !== 403 && err?.response?.status !== 429) {
+                    console.warn(`[BACKEND] Failed to fetch README for ${repo.name}:`, err?.response?.status || err?.message);
                 }
-                else {
-                    console.warn(`[BACKEND] Failed to fetch languages for ${repo.name}:`, err?.response?.status || err?.message);
-                }
-                repo.languages = {};
             }
-            // Fetch README for OpenAI context (optional, don't fail if missing)
-            try {
-                const readmeCacheKey = `github_readme_${repo.name}`;
-                let readmeContent = getCached(readmeCacheKey);
-                if (!readmeContent) {
-                    const readmeResponse = await axios.get(`https://api.github.com/repos/${githubUsername}/${repo.name}/readme`, { headers });
-                    if (readmeResponse.data?.content) {
-                        // Decode base64 content and extract first 500 characters
-                        const fullContent = Buffer.from(readmeResponse.data.content, 'base64').toString('utf-8');
-                        readmeContent = fullContent.substring(0, 500).replace(/\n/g, ' ').trim();
-                        setCached(readmeCacheKey, readmeContent, 10 * 60 * 1000); // 10 minutes cache
-                    }
-                }
-                repo.readmeExcerpt = readmeContent || undefined;
+            repo.readmeExcerpt = undefined;
+        }
+        return repo;
+    }));
+    // Filter repositories - AUTO-INCLUDE all qualifying repos
+    const filteredRepos = reposWithTopics.filter((repo) => {
+        // Inclusion logic:
+        // 1. INCLUDE all non-archived, non-fork, public repos by default
+        // 2. INCLUDE forks if they have the "portfolio" topic (explicit opt-in for forks)
+        // 3. EXCLUDE repos with "no-portfolio" topic (explicit opt-out)
+        // 4. EXCLUDE archived repos always
+        const hasPortfolioTopic = repo.topics && repo.topics.includes('portfolio');
+        const hasNoPortfolioTopic = repo.topics && repo.topics.includes('no-portfolio');
+        // Explicit exclusion takes priority
+        if (hasNoPortfolioTopic) {
+            console.log(`[BACKEND] Excluding repo ${repo.name}: has 'no-portfolio' topic`);
+            return false;
+        }
+        // Archived repos are always excluded
+        if (repo.archived) {
+            console.log(`[BACKEND] Excluding repo ${repo.name}: archived`);
+            return false;
+        }
+        // Forks are excluded unless they have 'portfolio' topic
+        if (repo.fork && !hasPortfolioTopic) {
+            console.log(`[BACKEND] Excluding repo ${repo.name}: fork without 'portfolio' topic`);
+            return false;
+        }
+        // All other repos are included
+        console.log(`[BACKEND] Including repo ${repo.name}: fork=${repo.fork}, hasPortfolio=${hasPortfolioTopic}`);
+        return true;
+    });
+    // Map repositories to project format (async operations require Promise.all)
+    const projects = await Promise.all(filteredRepos.map(async (repo) => {
+        // Extract tech stack from topics (common tech topics)
+        const techTopics = [
+            'react', 'typescript', 'javascript', 'nodejs', 'python', 'java', 'go', 'rust',
+            'vue', 'angular', 'svelte', 'nextjs', 'express', 'fastapi', 'django', 'flask',
+            'tailwindcss', 'css', 'html', 'mongodb', 'postgresql', 'mysql', 'redis',
+            'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'terraform', 'graphql', 'rest'
+        ];
+        const tech = [];
+        // First, add tech from topics
+        (repo.topics || []).forEach((topic) => {
+            if (techTopics.includes(topic.toLowerCase())) {
+                const formatted = topic
+                    .split('-')
+                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ');
+                tech.push(formatted);
             }
-            catch (err) {
-                // README is optional, continue without it
-                if (err?.response?.status !== 404) {
-                    // Only log non-404 errors (404 means no README, which is fine)
-                    if (err?.response?.status !== 403 && err?.response?.status !== 429) {
-                        console.warn(`[BACKEND] Failed to fetch README for ${repo.name}:`, err?.response?.status || err?.message);
-                    }
-                }
-                repo.readmeExcerpt = undefined;
-            }
-            return repo;
-        }));
-        // Filter repositories - AUTO-INCLUDE all qualifying repos
-        const filteredRepos = reposWithTopics.filter((repo) => {
-            // Inclusion logic:
-            // 1. INCLUDE all non-archived, non-fork, public repos by default
-            // 2. INCLUDE forks if they have the "portfolio" topic (explicit opt-in for forks)
-            // 3. EXCLUDE repos with "no-portfolio" topic (explicit opt-out)
-            // 4. EXCLUDE archived repos always
-            const hasPortfolioTopic = repo.topics && repo.topics.includes('portfolio');
-            const hasNoPortfolioTopic = repo.topics && repo.topics.includes('no-portfolio');
-            // Explicit exclusion takes priority
-            if (hasNoPortfolioTopic) {
-                console.log(`[BACKEND] Excluding repo ${repo.name}: has 'no-portfolio' topic`);
-                return false;
-            }
-            // Archived repos are always excluded
-            if (repo.archived) {
-                console.log(`[BACKEND] Excluding repo ${repo.name}: archived`);
-                return false;
-            }
-            // Forks are excluded unless they have 'portfolio' topic
-            if (repo.fork && !hasPortfolioTopic) {
-                console.log(`[BACKEND] Excluding repo ${repo.name}: fork without 'portfolio' topic`);
-                return false;
-            }
-            // All other repos are included
-            console.log(`[BACKEND] Including repo ${repo.name}: fork=${repo.fork}, hasPortfolio=${hasPortfolioTopic}`);
-            return true;
         });
-        // Map repositories to project format (async operations require Promise.all)
-        const projects = await Promise.all(filteredRepos.map(async (repo) => {
-            // Extract tech stack from topics (common tech topics)
-            const techTopics = [
-                'react', 'typescript', 'javascript', 'nodejs', 'python', 'java', 'go', 'rust',
-                'vue', 'angular', 'svelte', 'nextjs', 'express', 'fastapi', 'django', 'flask',
-                'tailwindcss', 'css', 'html', 'mongodb', 'postgresql', 'mysql', 'redis',
-                'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'terraform', 'graphql', 'rest'
-            ];
-            const tech = [];
-            // First, add tech from topics
-            (repo.topics || []).forEach((topic) => {
-                if (techTopics.includes(topic.toLowerCase())) {
-                    const formatted = topic
-                        .split('-')
-                        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                        .join(' ');
-                    tech.push(formatted);
-                }
-            });
-            // Then, add all languages from the languages API (sorted by bytes, descending)
-            if (repo.languages && Object.keys(repo.languages).length > 0) {
-                const languages = Object.entries(repo.languages)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([lang]) => lang);
-                languages.forEach((lang) => {
-                    // Don't add duplicates, and format language names nicely
-                    const formatted = lang
-                        .split('-')
-                        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                        .join(' ');
-                    if (!tech.includes(formatted)) {
-                        tech.push(formatted);
-                    }
-                });
-            }
-            // Fallback: if still no tech from topics or languages API, use the primary language from repo.language
-            // But only if we didn't get languages from the API (to avoid duplicates)
-            if (tech.length === 0 && repo.language) {
-                tech.push(repo.language);
-            }
-            else if (tech.length > 0 && !repo.languages && repo.language) {
-                // If we have tech from topics but languages API failed, still add primary language if not already present
-                const formatted = repo.language
+        // Then, add all languages from the languages API (sorted by bytes, descending)
+        if (repo.languages && Object.keys(repo.languages).length > 0) {
+            const languages = Object.entries(repo.languages)
+                .sort(([, a], [, b]) => b - a)
+                .map(([lang]) => lang);
+            languages.forEach((lang) => {
+                // Don't add duplicates, and format language names nicely
+                const formatted = lang
                     .split('-')
                     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
                     .join(' ');
                 if (!tech.includes(formatted)) {
                     tech.push(formatted);
                 }
+            });
+        }
+        // Fallback: if still no tech from topics or languages API, use the primary language from repo.language
+        // But only if we didn't get languages from the API (to avoid duplicates)
+        if (tech.length === 0 && repo.language) {
+            tech.push(repo.language);
+        }
+        else if (tech.length > 0 && !repo.languages && repo.language) {
+            // If we have tech from topics but languages API failed, still add primary language if not already present
+            const formatted = repo.language
+                .split('-')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+            if (!tech.includes(formatted)) {
+                tech.push(formatted);
             }
-            // Determine demo URL
-            let demoUrl = '#';
-            if (repo.homepage && repo.homepage !== '') {
-                demoUrl = repo.homepage;
-            }
-            else if (repo.name === 'MyLink') {
-                demoUrl = 'https://developer.epildevconnect.uk/';
-            }
-            else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
-                demoUrl = 'https://8ballpool.website/8bp-rewards/home';
-            }
-            // Description handling with OpenAI integration
-            let description = repo.description;
-            const githubDescription = repo.description;
-            // Check if we need to generate a description
-            const needsGeneration = !githubDescription ||
-                githubDescription.trim() === '' ||
-                isPlaceholderDescription(githubDescription);
-            // Check database cache first
-            const cachedDesc = await getProjectDescription(repo.name);
-            const shouldRegenerate = cachedDesc?.regenerate_flag === true;
-            if (needsGeneration || shouldRegenerate) {
-                // Try to use cached OpenAI description first (if not flagged for regeneration)
-                if (cachedDesc && cachedDesc.is_auto_generated && !shouldRegenerate) {
-                    description = cachedDesc.description;
-                    console.log(`[BACKEND] Using cached OpenAI description for ${repo.name}`);
-                }
-                else {
-                    // Generate new description using OpenAI
-                    const generatedDesc = await generateProjectDescription({
-                        name: repo.name,
-                        languages: repo.languages || {},
-                        topics: repo.topics || [],
-                        readmeExcerpt: repo.readmeExcerpt,
-                        description: githubDescription
-                    });
-                    if (generatedDesc) {
-                        // Save to database
-                        await saveProjectDescription(repo.name, generatedDesc, true, 'openai');
-                        description = generatedDesc;
-                        console.log(`[BACKEND] Generated and cached OpenAI description for ${repo.name}`);
-                    }
-                    else {
-                        // OpenAI generation failed, try cached description even if old
-                        if (cachedDesc) {
-                            description = cachedDesc.description;
-                            console.log(`[BACKEND] OpenAI generation failed, using cached description for ${repo.name}`);
-                        }
-                        else {
-                            // Fallback to hardcoded descriptions
-                            if (repo.name === 'myhub') {
-                                description = 'Real-time personal dashboard with live API integrations featuring Discord presence, Last.fm music tracking, and WakaTime coding stats';
-                            }
-                            else if (repo.name === '8bp-rewards-5.2-Public') {
-                                description = 'Comprehensive automated rewards system for 8 Ball Pool with Discord bot integration, browser automation, PostgreSQL database, and real-time claim tracking';
-                            }
-                            else if (repo.name === '8bp-rewards-5.0-Public' || repo.name === '8bp-rewards-5.0') {
-                                description = 'Comprehensive automated rewards system for 8 Ball Pool with Discord bot integration, browser automation, PostgreSQL database, and real-time claim tracking';
-                            }
-                            else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
-                                description = 'Automated rewards system for 8 Ball Pool with Discord integration, browser automation, and comprehensive user management';
-                            }
-                            else if (repo.name === 'BTD6-Auto-Assign') {
-                                description = 'Automated tower assignment system for Bloons TD 6 with intelligent placement algorithms and strategic optimisation';
-                            }
-                            else {
-                                // Last resort: formatted name
-                                description = repo.name.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-                            }
-                            console.log(`[BACKEND] Using fallback description for ${repo.name}`);
-                        }
-                    }
-                }
+        }
+        // Determine demo URL
+        let demoUrl = '#';
+        if (repo.homepage && repo.homepage !== '') {
+            demoUrl = repo.homepage;
+        }
+        else if (repo.name === 'MyLink') {
+            demoUrl = 'https://developer.epildevconnect.uk/';
+        }
+        else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
+            demoUrl = 'https://8ballpool.website/8bp-rewards/home';
+        }
+        // Description handling with OpenAI integration
+        let description = repo.description;
+        const githubDescription = repo.description;
+        // Check if we need to generate a description
+        const needsGeneration = !githubDescription ||
+            githubDescription.trim() === '' ||
+            isPlaceholderDescription(githubDescription);
+        // Check database cache first
+        const cachedDesc = await getProjectDescription(repo.name);
+        const shouldRegenerate = cachedDesc?.regenerate_flag === true;
+        if (needsGeneration || shouldRegenerate) {
+            // Try to use cached OpenAI description first (if not flagged for regeneration)
+            if (cachedDesc && cachedDesc.is_auto_generated && !shouldRegenerate) {
+                description = cachedDesc.description;
+                console.log(`[BACKEND] Using cached OpenAI description for ${repo.name}`);
             }
             else {
-                // GitHub description is valid, use it and cache it
-                description = githubDescription;
-                // Cache the GitHub description (if not already cached or if different)
-                if (!cachedDesc || cachedDesc.description !== githubDescription) {
-                    await saveProjectDescription(repo.name, githubDescription, false, 'github');
+                // Generate new description using OpenAI
+                const generatedDesc = await generateProjectDescription({
+                    name: repo.name,
+                    languages: repo.languages || {},
+                    topics: repo.topics || [],
+                    readmeExcerpt: repo.readmeExcerpt,
+                    description: githubDescription
+                });
+                if (generatedDesc) {
+                    // Save to database
+                    await saveProjectDescription(repo.name, generatedDesc, true, 'openai');
+                    description = generatedDesc;
+                    console.log(`[BACKEND] Generated and cached OpenAI description for ${repo.name}`);
+                }
+                else {
+                    // OpenAI generation failed, try cached description even if old
+                    if (cachedDesc) {
+                        description = cachedDesc.description;
+                        console.log(`[BACKEND] OpenAI generation failed, using cached description for ${repo.name}`);
+                    }
+                    else {
+                        // Fallback to hardcoded descriptions
+                        if (repo.name === 'myhub') {
+                            description = 'Real-time personal dashboard with live API integrations featuring Discord presence, Last.fm music tracking, and WakaTime coding stats';
+                        }
+                        else if (repo.name === '8bp-rewards-5.2-Public') {
+                            description = 'Comprehensive automated rewards system for 8 Ball Pool with Discord bot integration, browser automation, PostgreSQL database, and real-time claim tracking';
+                        }
+                        else if (repo.name === '8bp-rewards-5.0-Public' || repo.name === '8bp-rewards-5.0') {
+                            description = 'Comprehensive automated rewards system for 8 Ball Pool with Discord bot integration, browser automation, PostgreSQL database, and real-time claim tracking';
+                        }
+                        else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
+                            description = 'Automated rewards system for 8 Ball Pool with Discord integration, browser automation, and comprehensive user management';
+                        }
+                        else if (repo.name === 'BTD6-Auto-Assign') {
+                            description = 'Automated tower assignment system for Bloons TD 6 with intelligent placement algorithms and strategic optimisation';
+                        }
+                        else {
+                            // Last resort: formatted name
+                            description = repo.name.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+                        }
+                        console.log(`[BACKEND] Using fallback description for ${repo.name}`);
+                    }
                 }
             }
-            // Format title - special handling for specific repos
-            let title = repo.name.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-            if (repo.name === '8bp-rewards-5.2-Public') {
-                title = '8BP Rewards 5.2';
+        }
+        else {
+            // GitHub description is valid, use it and cache it
+            description = githubDescription;
+            // Cache the GitHub description (if not already cached or if different)
+            if (!cachedDesc || cachedDesc.description !== githubDescription) {
+                await saveProjectDescription(repo.name, githubDescription, false, 'github');
             }
-            else if (repo.name === '8bp-rewards-5.0-Public') {
-                title = '8BP Rewards 5.0';
-            }
-            else if (repo.name === '8bp-rewards-4.3.2') {
-                title = '8BP Rewards V4.3.2';
-            }
-            else if (repo.name === 'BTD6-Auto-Assign') {
-                title = 'BTD6 Auto Assign';
-            }
-            else if (repo.name === 'Discord-Giveaway-BOT') {
-                title = 'Discord Giveaway BOT';
-            }
-            let image;
-            if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
-                image = '/8bp-logo.png';
-            }
-            else if (repo.name === 'BTD6-Auto-Assign') {
-                image = '/btd6-logo.png?v=2';
-            }
-            return {
-                id: repo.id,
-                title: title,
-                description: description,
-                tech: tech.length > 0 ? tech : ['GitHub'],
-                github: repo.html_url,
-                demo: demoUrl,
-                featured: repo.topics && repo.topics.includes('featured'),
-                updatedAt: repo.updated_at,
-                stars: repo.stargazers_count,
-                forks: repo.forks_count,
-            };
-        }));
-        // Sort projects
-        projects.sort((a, b) => {
-            // Sort by featured first, then by updated date
-            if (a.featured && !b.featured)
-                return -1;
-            if (!a.featured && b.featured)
-                return 1;
-            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-        });
-        const result = { projects };
-        // Cache the result
+        }
+        // Format title - special handling for specific repos
+        let title = repo.name.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+        if (repo.name === '8bp-rewards-5.2-Public') {
+            title = '8BP Rewards 5.2';
+        }
+        else if (repo.name === '8bp-rewards-5.0-Public') {
+            title = '8BP Rewards 5.0';
+        }
+        else if (repo.name === '8bp-rewards-4.3.2') {
+            title = '8BP Rewards V4.3.2';
+        }
+        else if (repo.name === 'BTD6-Auto-Assign') {
+            title = 'BTD6 Auto Assign';
+        }
+        else if (repo.name === 'Discord-Giveaway-BOT') {
+            title = 'Discord Giveaway BOT';
+        }
+        let image;
+        if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
+            image = '/8bp-logo.png';
+        }
+        else if (repo.name === 'BTD6-Auto-Assign') {
+            image = '/btd6-logo.png?v=2';
+        }
+        return {
+            id: repo.id,
+            title: title,
+            description: description,
+            tech: tech.length > 0 ? tech : ['GitHub'],
+            github: repo.html_url,
+            demo: demoUrl,
+            featured: repo.topics && repo.topics.includes('featured'),
+            updatedAt: repo.updated_at,
+            stars: repo.stargazers_count,
+            forks: repo.forks_count,
+        };
+    }));
+    // Sort projects
+    projects.sort((a, b) => {
+        // Sort by featured first, then by updated date
+        if (a.featured && !b.featured)
+            return -1;
+        if (!a.featured && b.featured)
+            return 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+    console.log(`[BACKEND] GitHub API success - found ${projects.length} projects`);
+    return { projects };
+}
+// Serve repos with stale-while-revalidate: cached data is returned
+// instantly (even if expired) and an expired cache triggers a single
+// background refresh, so visitors never wait on the GitHub API.
+let reposRefreshInFlight = false;
+const handleGitHubRepos = async (req, res) => {
+    const cacheKey = 'github_repos';
+    const entry = githubCache.get(cacheKey);
+    if (entry) {
+        res.json(entry.data);
+        const isStale = Date.now() - entry.timestamp > entry.ttl;
+        if (isStale && !reposRefreshInFlight) {
+            reposRefreshInFlight = true;
+            buildGitHubReposData()
+                .then((result) => setCached(cacheKey, result))
+                .catch((err) => console.error('[BACKEND] Background repos refresh failed:', err?.message))
+                .finally(() => { reposRefreshInFlight = false; });
+        }
+        return;
+    }
+    try {
+        const result = await buildGitHubReposData();
         setCached(cacheKey, result);
-        console.log(`[BACKEND] GitHub API success - found ${projects.length} projects`);
         res.json(result);
     }
     catch (error) {
         console.error('GitHub API error:', error?.response?.status, error?.message);
-        // Rate limit (403 or 429) - try to return cached data if available
         if (error?.response?.status === 403 || error?.response?.status === 429) {
-            const cached = getCached(cacheKey);
-            if (cached) {
-                console.log('[BACKEND] Rate limited - returning cached data');
-                return res.json(cached);
-            }
             const githubToken = process.env.GITHUB_TOKEN;
             const rateLimitRemaining = error?.response?.headers['x-ratelimit-remaining'];
             const rateLimitReset = error?.response?.headers['x-ratelimit-reset'];
@@ -1391,188 +1398,192 @@ const handleClearCache = async (req, res) => {
 };
 apiRouter.post('/cache/clear', handleClearCache);
 app.post('/api/cache/clear', handleClearCache);
-// GitHub code snippets endpoint
-const handleGitHubCodeSnippets = async (req, res) => {
-    console.log('[BACKEND] /api/github/code-snippets hit');
-    // Check cache first
-    const cacheKey = 'github_code_snippets';
-    const cached = getCached(cacheKey);
-    if (cached) {
-        console.log('[BACKEND] Returning cached GitHub code snippets data');
-        return res.json(cached);
+// GitHub code snippets: builds the snippet list from the GitHub API.
+async function buildGitHubSnippetsData() {
+    const configuredUsername = process.env.GITHUB_USERNAME;
+    const githubUserCandidates = Array.from(new Set([
+        configuredUsername,
+        process.env.GITHUB_USERNAME_FALLBACK,
+        'gitEpildev',
+        'epildev'
+    ].filter(Boolean)));
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (!githubToken) {
+        console.warn('[BACKEND] ⚠️ GITHUB_TOKEN not set! Rate limits will be lower');
     }
-    try {
-        const configuredUsername = process.env.GITHUB_USERNAME;
-        const githubUserCandidates = Array.from(new Set([
-            configuredUsername,
-            process.env.GITHUB_USERNAME_FALLBACK,
-            'gitEpildev',
-            'epildev'
-        ].filter(Boolean)));
-        const githubToken = process.env.GITHUB_TOKEN;
-        if (!githubToken) {
-            console.warn('[BACKEND] ⚠️ GITHUB_TOKEN not set! Rate limits will be lower');
-        }
-        const headers = {
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'MY-HUB-Dashboard/1.0'
-        };
-        if (githubToken) {
-            headers['Authorization'] = `token ${githubToken}`;
-        }
-        const tryFetchSnippet = async (owners, repo, path) => {
-            // Keep this tight to ensure the endpoint stays responsive.
-            const refs = ['main', 'master'];
-            const candidateOwners = owners.slice(0, 1);
-            for (const owner of candidateOwners) {
-                for (const ref of refs) {
-                    try {
-                        const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}`, { headers, timeout: 2500 });
-                        if (response?.data?.content) {
-                            return {
-                                owner,
-                                ref,
-                                content: Buffer.from(response.data.content, 'base64').toString('utf-8')
-                            };
-                        }
+    const headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Epildevconnect-Site/2.0'
+    };
+    if (githubToken) {
+        headers['Authorization'] = `token ${githubToken}`;
+    }
+    const tryFetchSnippet = async (owners, repo, path) => {
+        // Keep this tight to ensure the endpoint stays responsive.
+        const refs = ['main', 'master'];
+        const candidateOwners = owners.slice(0, 1);
+        for (const owner of candidateOwners) {
+            for (const ref of refs) {
+                try {
+                    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}`, { headers, timeout: 2500 });
+                    if (response?.data?.content) {
+                        return {
+                            owner,
+                            ref,
+                            content: Buffer.from(response.data.content, 'base64').toString('utf-8')
+                        };
                     }
-                    catch (err) {
-                        // Continue trying other owner/ref combinations.
-                        if (err?.response?.status !== 404) {
-                            console.warn(`[BACKEND] Snippet fetch issue for ${owner}/${repo}/${path}@${ref}:`, err?.response?.status || err?.message);
-                        }
+                }
+                catch (err) {
+                    // Continue trying other owner/ref combinations.
+                    if (err?.response?.status !== 404) {
+                        console.warn(`[BACKEND] Snippet fetch issue for ${owner}/${repo}/${path}@${ref}:`, err?.response?.status || err?.message);
                     }
                 }
             }
-            throw new Error(`Snippet not found for ${repo}/${path} across owners/refs`);
-        };
-        const inferLanguageFromPath = (path) => {
-            if (path.endsWith('.tsx') || path.endsWith('.ts'))
-                return 'typescript';
-            if (path.endsWith('.jsx') || path.endsWith('.js'))
-                return 'javascript';
-            if (path.endsWith('.py'))
-                return 'python';
-            if (path.endsWith('.go'))
-                return 'go';
-            if (path.endsWith('.java'))
-                return 'java';
-            if (path.endsWith('.json'))
-                return 'json';
-            if (path.endsWith('.md'))
-                return 'markdown';
-            if (path.endsWith('.yml') || path.endsWith('.yaml'))
-                return 'yaml';
-            return 'text';
-        };
-        const toTitle = (repoName, path) => {
-            const repoTitle = repoName.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-            const fileName = path.split('/').pop() || path;
-            return `${repoTitle} - ${fileName}`;
-        };
-        // Get recent repos dynamically so Code Viewer stays fresh.
-        let reposOwner = githubUserCandidates[0];
-        let recentRepos = [];
-        for (const owner of githubUserCandidates) {
-            try {
-                const reposResponse = await axios.get(`https://api.github.com/users/${owner}/repos?sort=updated&per_page=20&type=public`, { headers, timeout: 4000 });
-                recentRepos = reposResponse.data || [];
-                reposOwner = owner;
-                if (recentRepos.length > 0)
-                    break;
-            }
-            catch (err) {
-                console.warn(`[BACKEND] Failed repo list fetch for ${owner}:`, err?.response?.status || err?.message);
-            }
         }
-        const filteredRepos = recentRepos
-            .filter((repo) => !repo.archived && !repo.fork)
-            .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-        // Prefer these repos at the top if they exist.
-        const pinnedRepos = ['myhub', '8bp-rewards-5.2-Public', '8bp-rewards-5.0-Public', 'BTD6-Auto-Assign'];
-        const orderedRepoNames = Array.from(new Set([
-            ...pinnedRepos.filter((name) => filteredRepos.some((r) => r.name === name)),
-            ...filteredRepos.map((r) => r.name),
-        ])).slice(0, 8);
-        const repoOwnerByName = new Map(filteredRepos.map((repo) => [repo.name, repo.owner?.login || reposOwner]));
-        const pathCandidates = [
-            'server/index.ts',
-            'src/main.tsx',
-            'src/App.tsx',
-            'backend/src/server.ts',
-            'src/components/messages/ChatView.tsx',
-            'src/components/ParticleBackground.tsx',
-            'src/components/ActivityFeed.tsx',
-            'backend/src/services/DiscordNotificationService.ts',
-            'README.md',
-        ];
-        const snippets = [];
-        for (const repoName of orderedRepoNames) {
+        throw new Error(`Snippet not found for ${repo}/${path} across owners/refs`);
+    };
+    const inferLanguageFromPath = (path) => {
+        if (path.endsWith('.tsx') || path.endsWith('.ts'))
+            return 'typescript';
+        if (path.endsWith('.jsx') || path.endsWith('.js'))
+            return 'javascript';
+        if (path.endsWith('.py'))
+            return 'python';
+        if (path.endsWith('.go'))
+            return 'go';
+        if (path.endsWith('.java'))
+            return 'java';
+        if (path.endsWith('.json'))
+            return 'json';
+        if (path.endsWith('.md'))
+            return 'markdown';
+        if (path.endsWith('.yml') || path.endsWith('.yaml'))
+            return 'yaml';
+        return 'text';
+    };
+    const toTitle = (repoName, path) => {
+        const repoTitle = repoName.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        const fileName = path.split('/').pop() || path;
+        return `${repoTitle} - ${fileName}`;
+    };
+    // Get recent repos dynamically so Code Viewer stays fresh.
+    let reposOwner = githubUserCandidates[0];
+    let recentRepos = [];
+    for (const owner of githubUserCandidates) {
+        try {
+            const reposResponse = await axios.get(`https://api.github.com/users/${owner}/repos?sort=updated&per_page=20&type=public`, { headers, timeout: 4000 });
+            recentRepos = reposResponse.data || [];
+            reposOwner = owner;
+            if (recentRepos.length > 0)
+                break;
+        }
+        catch (err) {
+            console.warn(`[BACKEND] Failed repo list fetch for ${owner}:`, err?.response?.status || err?.message);
+        }
+    }
+    const filteredRepos = recentRepos
+        .filter((repo) => !repo.archived && !repo.fork)
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    // Prefer these repos at the top if they exist.
+    const pinnedRepos = ['myhub', '8bp-rewards-5.2-Public', '8bp-rewards-5.0-Public', 'BTD6-Auto-Assign'];
+    const orderedRepoNames = Array.from(new Set([
+        ...pinnedRepos.filter((name) => filteredRepos.some((r) => r.name === name)),
+        ...filteredRepos.map((r) => r.name),
+    ])).slice(0, 8);
+    const repoOwnerByName = new Map(filteredRepos.map((repo) => [repo.name, repo.owner?.login || reposOwner]));
+    const pathCandidates = [
+        'server/index.ts',
+        'src/main.tsx',
+        'src/App.tsx',
+        'backend/src/server.ts',
+        'src/components/messages/ChatView.tsx',
+        'src/components/ParticleBackground.tsx',
+        'src/components/ActivityFeed.tsx',
+        'backend/src/services/DiscordNotificationService.ts',
+        'README.md',
+    ];
+    const snippets = [];
+    for (const repoName of orderedRepoNames) {
+        if (snippets.length >= 12)
+            break;
+        let selected = null;
+        for (const path of pathCandidates) {
             if (snippets.length >= 12)
                 break;
-            let selected = null;
-            for (const path of pathCandidates) {
-                if (snippets.length >= 12)
-                    break;
-                const snippetCacheKey = `github_snippet_${repoName}_${path}`;
-                const cachedSnippet = getCached(snippetCacheKey);
-                if (cachedSnippet) {
-                    selected = cachedSnippet;
-                    break;
-                }
-                try {
-                    const repoOwner = repoOwnerByName.get(repoName) || reposOwner;
-                    const fetched = await tryFetchSnippet([repoOwner], repoName, path);
-                    const lines = fetched.content.split('\n');
-                    const limitedContent = lines.slice(0, 500).join('\n');
-                    const snippetData = {
-                        id: `${repoName}:${path}`,
-                        title: toTitle(repoName, path),
-                        language: inferLanguageFromPath(path),
-                        code: limitedContent,
-                        repo: repoName,
-                        path,
-                        fullUrl: `https://github.com/${fetched.owner}/${repoName}/blob/${fetched.ref}/${path}`,
-                    };
-                    setCached(snippetCacheKey, snippetData, 10 * 60 * 1000);
-                    selected = snippetData;
-                    break;
-                }
-                catch {
-                    // Try the next candidate path.
-                }
+            const snippetCacheKey = `github_snippet_${repoName}_${path}`;
+            const cachedSnippet = getCached(snippetCacheKey);
+            if (cachedSnippet) {
+                selected = cachedSnippet;
+                break;
             }
-            if (selected) {
-                snippets.push(selected);
+            try {
+                const repoOwner = repoOwnerByName.get(repoName) || reposOwner;
+                const fetched = await tryFetchSnippet([repoOwner], repoName, path);
+                const lines = fetched.content.split('\n');
+                const limitedContent = lines.slice(0, 500).join('\n');
+                const snippetData = {
+                    id: `${repoName}:${path}`,
+                    title: toTitle(repoName, path),
+                    language: inferLanguageFromPath(path),
+                    code: limitedContent,
+                    repo: repoName,
+                    path,
+                    fullUrl: `https://github.com/${fetched.owner}/${repoName}/blob/${fetched.ref}/${path}`,
+                };
+                setCached(snippetCacheKey, snippetData, 10 * 60 * 1000);
+                selected = snippetData;
+                break;
+            }
+            catch {
+                // Try the next candidate path.
             }
         }
-        // Keep UI populated if GitHub repo structure changes unexpectedly.
-        if (snippets.length === 0) {
-            snippets.push({
-                id: 'fallback-no-snippets',
-                title: 'No snippets found',
-                language: 'markdown',
-                code: '# No snippets available\n\nUnable to fetch code snippets from recent repositories right now.',
-                repo: orderedRepoNames[0] || 'unknown',
-                path: 'README.md',
-                fullUrl: reposOwner ? `https://github.com/${reposOwner}` : undefined,
-            });
+        if (selected) {
+            snippets.push(selected);
         }
-        const result = { snippets };
-        // Cache the full result
-        setCached(cacheKey, result, 10 * 60 * 1000); // 10 minutes cache
-        console.log(`[BACKEND] GitHub code snippets success - found ${snippets.length} snippets`);
+    }
+    // Keep UI populated if GitHub repo structure changes unexpectedly.
+    if (snippets.length === 0) {
+        snippets.push({
+            id: 'fallback-no-snippets',
+            title: 'No snippets found',
+            language: 'markdown',
+            code: '# No snippets available\n\nUnable to fetch code snippets from recent repositories right now.',
+            repo: orderedRepoNames[0] || 'unknown',
+            path: 'README.md',
+            fullUrl: reposOwner ? `https://github.com/${reposOwner}` : undefined,
+        });
+    }
+    console.log(`[BACKEND] GitHub code snippets success - found ${snippets.length} snippets`);
+    return { snippets };
+}
+// Serve snippets with stale-while-revalidate, same pattern as repos.
+let snippetsRefreshInFlight = false;
+const handleGitHubCodeSnippets = async (req, res) => {
+    const cacheKey = 'github_code_snippets';
+    const entry = githubCache.get(cacheKey);
+    if (entry) {
+        res.json(entry.data);
+        const isStale = Date.now() - entry.timestamp > entry.ttl;
+        if (isStale && !snippetsRefreshInFlight) {
+            snippetsRefreshInFlight = true;
+            buildGitHubSnippetsData()
+                .then((result) => setCached(cacheKey, result, 10 * 60 * 1000))
+                .catch((err) => console.error('[BACKEND] Background snippets refresh failed:', err?.message))
+                .finally(() => { snippetsRefreshInFlight = false; });
+        }
+        return;
+    }
+    try {
+        const result = await buildGitHubSnippetsData();
+        setCached(cacheKey, result, 10 * 60 * 1000);
         res.json(result);
     }
     catch (error) {
         console.error('GitHub code snippets error:', error?.response?.status, error?.message);
         if (error?.response?.status === 403 || error?.response?.status === 429) {
-            // Try to return cached data if available
-            const cached = getCached(cacheKey);
-            if (cached) {
-                console.log('[BACKEND] Rate limited - returning cached code snippets');
-                return res.json(cached);
-            }
             const githubToken = process.env.GITHUB_TOKEN;
             const rateLimitRemaining = error?.response?.headers['x-ratelimit-remaining'];
             const rateLimitReset = error?.response?.headers['x-ratelimit-reset'];
@@ -1739,7 +1750,7 @@ app.post('/api/contact/discord', async (req, res) => {
         await transporter.sendMail({
             from: fromEmail, // Plain email address
             to: process.env.SMTP_USER,
-            subject: `MY HUB Contact from ${user.profile.username}`,
+            subject: `Epildevconnect Contact from ${user.profile.username}`,
             text: `Message from Discord user ${user.profile.username}#${user.profile.discriminator}:\n\n${message}`,
             html: `
         <h3>Message from Discord user ${user.profile.username}#${user.profile.discriminator}</h3>
@@ -1777,7 +1788,7 @@ const handleContactEmail = async (req, res) => {
             from: fromEmail, // Plain email address - no display name
             to: process.env.SMTP_USER,
             replyTo: email,
-            subject: `MY HUB Contact: ${subject} (from ${name})`,
+            subject: `Epildevconnect Contact: ${subject} (from ${name})`,
             text: `Name: ${name}\nEmail: ${email}\nSubject: ${subject}\n\nMessage:\n${message}`,
             html: `
         <h3>Contact Form Submission</h3>
@@ -1796,7 +1807,7 @@ const handleContactEmail = async (req, res) => {
             to: email,
             replyTo: process.env.SMTP_USER, // When user replies, it goes to connectwithme@epildevconnect.uk
             subject: `Re: ${subject}`,
-            text: `Hi ${name},\n\nThank you for reaching out! I've received your message regarding "${subject}" and will get back to you as soon as possible.\n\nYour message:\n${message}\n\nBest regards,\nBlake (@epildev)\nMY HUB - EpilDevConnect`,
+            text: `Hi ${name},\n\nThank you for reaching out! I've received your message regarding "${subject}" and will get back to you as soon as possible.\n\nYour message:\n${message}\n\nBest regards,\nBlake (@epildev)\nEpildevconnect Ltd`,
             html: `
         <!DOCTYPE html>
         <html>
@@ -1813,10 +1824,10 @@ const handleContactEmail = async (req, res) => {
                     <tr>
                       <td style="padding: 40px 40px 20px; text-align: center; border-bottom: 1px solid rgba(0, 217, 255, 0.1);">
                         <h1 style="margin: 0; font-size: 32px; font-weight: bold; color: #00d9ff; text-shadow: 0 0 20px rgba(0, 217, 255, 0.5);">
-                          MY HUB
+                          Epildevconnect Ltd
                         </h1>
                         <p style="margin: 10px 0 0; font-size: 14px; color: #8899aa; font-family: 'Courier New', monospace;">
-                          by EpilDevConnect
+                          developer.epildevconnect.uk
                         </p>
                       </td>
                     </tr>
@@ -1861,7 +1872,7 @@ const handleContactEmail = async (req, res) => {
                         </p>
                         <div style="margin: 20px 0 0; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
                           <p style="margin: 0; font-size: 12px; color: #666; font-family: 'Courier New', monospace;">
-                            © 2025 MY HUB by EpilDevConnect. All rights reserved.
+                            © 2026 Epildevconnect Ltd (Company No. 17247566). All rights reserved.
                           </p>
                         </div>
                       </td>
@@ -1979,6 +1990,13 @@ async function startServer() {
             console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);
             console.log(`💬 Discord DM system initialized`);
         });
+        // Warm the GitHub caches so the first visitor gets instant responses
+        buildGitHubReposData()
+            .then((result) => setCached('github_repos', result))
+            .catch((err) => console.error('[BACKEND] Repos cache warm-up failed:', err?.message));
+        buildGitHubSnippetsData()
+            .then((result) => setCached('github_code_snippets', result, 10 * 60 * 1000))
+            .catch((err) => console.error('[BACKEND] Snippets cache warm-up failed:', err?.message));
     }
     catch (error) {
         console.error('❌ Failed to start server:', error);

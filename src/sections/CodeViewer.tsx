@@ -27,40 +27,64 @@ const langColors: Record<string, string> = {
   markdown: '#083fa1',
 };
 
+const SNIPPETS_CACHE_KEY = 'code_snippets_cache_v1';
+
+function filterSnippets(data: any): CodeSnippet[] {
+  if (!data || !data.snippets || !Array.isArray(data.snippets)) return [];
+  return data.snippets.filter((s: CodeSnippet) => {
+    const p = (s.path || '').toLowerCase();
+    const lang = (s.language || '').toLowerCase();
+    const title = (s.title || '').toLowerCase();
+    if (lang === 'markdown' || lang === 'md') return false;
+    if (p.endsWith('.md') || p.endsWith('.mdx')) return false;
+    if (title.includes('readme')) return false;
+    return true;
+  });
+}
+
 export default function CodeViewer() {
-  const [codeExamples, setCodeExamples] = useState<CodeSnippet[]>([]);
-  const [selectedExample, setSelectedExample] = useState<CodeSnippet | null>(null);
+  // Render cached snippets instantly; a fresh copy loads in the background
+  const [codeExamples, setCodeExamples] = useState<CodeSnippet[]>(() => {
+    try {
+      const cached = sessionStorage.getItem(SNIPPETS_CACHE_KEY);
+      if (cached) return filterSnippets(JSON.parse(cached));
+    } catch {
+      // No usable cache; fall through to the loading state
+    }
+    return [];
+  });
+  const [selectedExample, setSelectedExample] = useState<CodeSnippet | null>(
+    codeExamples.length > 0 ? codeExamples[0] : null
+  );
   const [copied, setCopied] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(codeExamples.length === 0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadCodeSnippets = async () => {
       try {
-        setIsLoading(true);
-        setError(null);
         const data = await fetchGitHubCodeSnippets();
-        if (data && data.snippets && Array.isArray(data.snippets)) {
-          const filtered = data.snippets.filter((s: CodeSnippet) => {
-            const p = (s.path || '').toLowerCase();
-            const lang = (s.language || '').toLowerCase();
-            const title = (s.title || '').toLowerCase();
-            if (lang === 'markdown' || lang === 'md') return false;
-            if (p.endsWith('.md') || p.endsWith('.mdx')) return false;
-            if (title.includes('readme')) return false;
-            return true;
-          });
+        const filtered = filterSnippets(data);
+        if (filtered.length > 0) {
           setCodeExamples(filtered);
-          if (filtered.length > 0) {
-            setSelectedExample(filtered[0]);
+          setSelectedExample((current) => {
+            if (!current) return filtered[0];
+            return filtered.find((s) => s.id === current.id) || filtered[0];
+          });
+          setError(null);
+          try {
+            sessionStorage.setItem(SNIPPETS_CACHE_KEY, JSON.stringify(data));
+          } catch {
+            // Cache write failed; next visit just refetches
           }
-        } else {
-          setCodeExamples([]);
+        } else if (codeExamples.length === 0) {
+          setError('No code snippets found');
         }
       } catch (err: any) {
-        console.error('[CodeViewer] Failed to load code snippets:', err);
-        setError(err.response?.data?.message || 'Failed to load code snippets');
-        setCodeExamples([]);
+        // Keep showing cached snippets on background failures
+        if (codeExamples.length === 0) {
+          setError(err.response?.data?.message || 'Failed to load code snippets');
+        }
       } finally {
         setIsLoading(false);
       }

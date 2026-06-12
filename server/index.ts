@@ -126,7 +126,7 @@ function clearCache(pattern?: string): number {
 }
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'myhub-secret-key',
+  secret: process.env.SESSION_SECRET || 'epildevconnect-secret-key',
   resave: true, // Changed to true to ensure session is saved on every request
   saveUninitialized: false,
   proxy: true, // Trust proxy for session cookies
@@ -946,7 +946,7 @@ const handleDiscordProfile = async (req: express.Request, res: express.Response)
     const userResponse = await axios.get(`https://discord.com/api/v10/users/${userId}`, {
       headers: {
         'Authorization': `Bot ${botToken}`,
-        'User-Agent': 'MY-HUB-Dashboard/1.0'
+        'User-Agent': 'Epildevconnect-Site/2.0'
       }
     });
     
@@ -1217,19 +1217,9 @@ const handleWakaTime = async (req: express.Request, res: express.Response) => {
 apiRouter.get('/wakatime/stats', handleWakaTime);
 app.get('/api/wakatime/stats', handleWakaTime);
 
-// GitHub repositories endpoint
-const handleGitHubRepos = async (req: express.Request, res: express.Response) => {
-  console.log('[BACKEND] /api/github/repos hit - path:', req.path, 'originalUrl:', req.originalUrl, 'method:', req.method);
-  
-  // Check cache first
-  const cacheKey = 'github_repos';
-  const cached = getCached(cacheKey);
-  if (cached) {
-    console.log('[BACKEND] Returning cached GitHub repos data');
-    return res.json(cached);
-  }
-  
-  try {
+// GitHub repositories: builds the full project list from the GitHub API.
+// Used by the handler below with stale-while-revalidate caching.
+async function buildGitHubReposData(): Promise<any> {
     const githubUsername = process.env.GITHUB_USERNAME || 'gitEpildev';
     const githubToken = process.env.GITHUB_TOKEN; // Optional, for higher rate limits
     
@@ -1239,13 +1229,13 @@ const handleGitHubRepos = async (req: express.Request, res: express.Response) =>
     
     const headers: any = {
       'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'MY-HUB-Dashboard/1.0'
+      'User-Agent': 'Epildevconnect-Site/2.0'
     };
     
     // Topics endpoint requires different Accept header
     const topicsHeaders: any = {
       'Accept': 'application/vnd.github.mercy-preview+json',
-      'User-Agent': 'MY-HUB-Dashboard/1.0'
+      'User-Agent': 'Epildevconnect-Site/2.0'
     };
     
     if (githubToken) {
@@ -1576,23 +1566,38 @@ const handleGitHubRepos = async (req: express.Request, res: express.Response) =>
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
     
-    const result = { projects };
-    
-    // Cache the result
-    setCached(cacheKey, result);
-    
     console.log(`[BACKEND] GitHub API success - found ${projects.length} projects`);
+    return { projects };
+}
+
+// Serve repos with stale-while-revalidate: cached data is returned
+// instantly (even if expired) and an expired cache triggers a single
+// background refresh, so visitors never wait on the GitHub API.
+let reposRefreshInFlight = false;
+const handleGitHubRepos = async (req: express.Request, res: express.Response) => {
+  const cacheKey = 'github_repos';
+  const entry = githubCache.get(cacheKey);
+
+  if (entry) {
+    res.json(entry.data);
+    const isStale = Date.now() - entry.timestamp > entry.ttl;
+    if (isStale && !reposRefreshInFlight) {
+      reposRefreshInFlight = true;
+      buildGitHubReposData()
+        .then((result) => setCached(cacheKey, result))
+        .catch((err: any) => console.error('[BACKEND] Background repos refresh failed:', err?.message))
+        .finally(() => { reposRefreshInFlight = false; });
+    }
+    return;
+  }
+
+  try {
+    const result = await buildGitHubReposData();
+    setCached(cacheKey, result);
     res.json(result);
   } catch (error: any) {
     console.error('GitHub API error:', error?.response?.status, error?.message);
-    // Rate limit (403 or 429) - try to return cached data if available
     if (error?.response?.status === 403 || error?.response?.status === 429) {
-      const cached = getCached(cacheKey);
-      if (cached) {
-        console.log('[BACKEND] Rate limited - returning cached data');
-        return res.json(cached);
-      }
-      
       const githubToken = process.env.GITHUB_TOKEN;
       const rateLimitRemaining = error?.response?.headers['x-ratelimit-remaining'];
       const rateLimitReset = error?.response?.headers['x-ratelimit-reset'];
@@ -1642,19 +1647,8 @@ const handleClearCache = async (req: express.Request, res: express.Response) => 
 apiRouter.post('/cache/clear', handleClearCache);
 app.post('/api/cache/clear', handleClearCache);
 
-// GitHub code snippets endpoint
-const handleGitHubCodeSnippets = async (req: express.Request, res: express.Response) => {
-  console.log('[BACKEND] /api/github/code-snippets hit');
-  
-  // Check cache first
-  const cacheKey = 'github_code_snippets';
-  const cached = getCached(cacheKey);
-  if (cached) {
-    console.log('[BACKEND] Returning cached GitHub code snippets data');
-    return res.json(cached);
-  }
-  
-  try {
+// GitHub code snippets: builds the snippet list from the GitHub API.
+async function buildGitHubSnippetsData(): Promise<any> {
     const configuredUsername = process.env.GITHUB_USERNAME;
     const githubUserCandidates = Array.from(
       new Set(
@@ -1674,7 +1668,7 @@ const handleGitHubCodeSnippets = async (req: express.Request, res: express.Respo
     
     const headers: any = {
       'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'MY-HUB-Dashboard/1.0'
+      'User-Agent': 'Epildevconnect-Site/2.0'
     };
     
     if (githubToken) {
@@ -1837,23 +1831,36 @@ const handleGitHubCodeSnippets = async (req: express.Request, res: express.Respo
       });
     }
     
-    const result = { snippets };
-    
-    // Cache the full result
-    setCached(cacheKey, result, 10 * 60 * 1000); // 10 minutes cache
-    
     console.log(`[BACKEND] GitHub code snippets success - found ${snippets.length} snippets`);
+    return { snippets };
+}
+
+// Serve snippets with stale-while-revalidate, same pattern as repos.
+let snippetsRefreshInFlight = false;
+const handleGitHubCodeSnippets = async (req: express.Request, res: express.Response) => {
+  const cacheKey = 'github_code_snippets';
+  const entry = githubCache.get(cacheKey);
+
+  if (entry) {
+    res.json(entry.data);
+    const isStale = Date.now() - entry.timestamp > entry.ttl;
+    if (isStale && !snippetsRefreshInFlight) {
+      snippetsRefreshInFlight = true;
+      buildGitHubSnippetsData()
+        .then((result) => setCached(cacheKey, result, 10 * 60 * 1000))
+        .catch((err: any) => console.error('[BACKEND] Background snippets refresh failed:', err?.message))
+        .finally(() => { snippetsRefreshInFlight = false; });
+    }
+    return;
+  }
+
+  try {
+    const result = await buildGitHubSnippetsData();
+    setCached(cacheKey, result, 10 * 60 * 1000);
     res.json(result);
   } catch (error: any) {
     console.error('GitHub code snippets error:', error?.response?.status, error?.message);
     if (error?.response?.status === 403 || error?.response?.status === 429) {
-      // Try to return cached data if available
-      const cached = getCached(cacheKey);
-      if (cached) {
-        console.log('[BACKEND] Rate limited - returning cached code snippets');
-        return res.json(cached);
-      }
-      
       const githubToken = process.env.GITHUB_TOKEN;
       const rateLimitRemaining = error?.response?.headers['x-ratelimit-remaining'];
       const rateLimitReset = error?.response?.headers['x-ratelimit-reset'];
@@ -2035,7 +2042,7 @@ app.post('/api/contact/discord', async (req, res) => {
         await transporter.sendMail({
           from: fromEmail, // Plain email address
           to: process.env.SMTP_USER,
-          subject: `MY HUB Contact from ${user.profile.username}`,
+          subject: `Epildevconnect Contact from ${user.profile.username}`,
       text: `Message from Discord user ${user.profile.username}#${user.profile.discriminator}:\n\n${message}`,
       html: `
         <h3>Message from Discord user ${user.profile.username}#${user.profile.discriminator}</h3>
@@ -2078,7 +2085,7 @@ const handleContactEmail = async (req: express.Request, res: express.Response) =
       from: fromEmail, // Plain email address - no display name
       to: process.env.SMTP_USER,
       replyTo: email,
-      subject: `MY HUB Contact: ${subject} (from ${name})`,
+      subject: `Epildevconnect Contact: ${subject} (from ${name})`,
       text: `Name: ${name}\nEmail: ${email}\nSubject: ${subject}\n\nMessage:\n${message}`,
       html: `
         <h3>Contact Form Submission</h3>
@@ -2099,7 +2106,7 @@ const handleContactEmail = async (req: express.Request, res: express.Response) =
       to: email,
       replyTo: process.env.SMTP_USER, // When user replies, it goes to connectwithme@epildevconnect.uk
       subject: `Re: ${subject}`,
-      text: `Hi ${name},\n\nThank you for reaching out! I've received your message regarding "${subject}" and will get back to you as soon as possible.\n\nYour message:\n${message}\n\nBest regards,\nBlake (@epildev)\nMY HUB - EpilDevConnect`,
+      text: `Hi ${name},\n\nThank you for reaching out! I've received your message regarding "${subject}" and will get back to you as soon as possible.\n\nYour message:\n${message}\n\nBest regards,\nBlake (@epildev)\nEpildevconnect Ltd`,
       html: `
         <!DOCTYPE html>
         <html>
@@ -2116,10 +2123,10 @@ const handleContactEmail = async (req: express.Request, res: express.Response) =
                     <tr>
                       <td style="padding: 40px 40px 20px; text-align: center; border-bottom: 1px solid rgba(0, 217, 255, 0.1);">
                         <h1 style="margin: 0; font-size: 32px; font-weight: bold; color: #00d9ff; text-shadow: 0 0 20px rgba(0, 217, 255, 0.5);">
-                          MY HUB
+                          Epildevconnect Ltd
                         </h1>
                         <p style="margin: 10px 0 0; font-size: 14px; color: #8899aa; font-family: 'Courier New', monospace;">
-                          by EpilDevConnect
+                          developer.epildevconnect.uk
                         </p>
                       </td>
                     </tr>
@@ -2164,7 +2171,7 @@ const handleContactEmail = async (req: express.Request, res: express.Response) =
                         </p>
                         <div style="margin: 20px 0 0; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
                           <p style="margin: 0; font-size: 12px; color: #666; font-family: 'Courier New', monospace;">
-                            © 2025 MY HUB by EpilDevConnect. All rights reserved.
+                            © 2026 Epildevconnect Ltd (Company No. 17247566). All rights reserved.
                           </p>
                         </div>
                       </td>
@@ -2299,6 +2306,14 @@ async function startServer() {
       console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);
       console.log(`💬 Discord DM system initialized`);
     });
+
+    // Warm the GitHub caches so the first visitor gets instant responses
+    buildGitHubReposData()
+      .then((result) => setCached('github_repos', result))
+      .catch((err: any) => console.error('[BACKEND] Repos cache warm-up failed:', err?.message));
+    buildGitHubSnippetsData()
+      .then((result) => setCached('github_code_snippets', result, 10 * 60 * 1000))
+      .catch((err: any) => console.error('[BACKEND] Snippets cache warm-up failed:', err?.message));
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

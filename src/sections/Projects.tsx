@@ -133,29 +133,49 @@ function ProjectCard({ project, index }: { project: Project; index: number }) {
   );
 }
 
+const PROJECTS_CACHE_KEY = 'projects_cache_v1';
+
+function mergeProjects(data: any): Project[] {
+  if (data && data.projects && Array.isArray(data.projects)) {
+    const filtered = data.projects.filter(
+      (p: Project) => !pinnedNames.has(p.title.toLowerCase())
+    );
+    return [...pinnedProjects, ...filtered];
+  }
+  return [...pinnedProjects];
+}
+
 export default function Projects() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Render cached projects instantly; a fresh copy loads in the background
+  const [projects, setProjects] = useState<Project[]>(() => {
+    try {
+      const cached = sessionStorage.getItem(PROJECTS_CACHE_KEY);
+      if (cached) return mergeProjects(JSON.parse(cached));
+    } catch {
+      // No usable cache; fall through to the loading state
+    }
+    return [];
+  });
+  const [isLoading, setIsLoading] = useState(projects.length === 0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadProjects = async () => {
       try {
-        setIsLoading(true);
-        setError(null);
         const data = await fetchGitHubRepos();
-        if (data && data.projects && Array.isArray(data.projects)) {
-          const filtered = data.projects.filter(
-            (p: Project) => !pinnedNames.has(p.title.toLowerCase())
-          );
-          setProjects([...pinnedProjects, ...filtered]);
-        } else {
-          setProjects([...pinnedProjects]);
+        setProjects(mergeProjects(data));
+        setError(null);
+        try {
+          sessionStorage.setItem(PROJECTS_CACHE_KEY, JSON.stringify(data));
+        } catch {
+          // Cache write failed; next visit just refetches
         }
       } catch (err: any) {
-        console.error('[Projects] Failed to load projects:', err);
-        setError(err.response?.data?.message || 'Failed to load projects');
-        setProjects([...pinnedProjects]);
+        // Keep showing cached/pinned projects on background failures
+        if (projects.length === 0) {
+          setError(err.response?.data?.message || 'Failed to load projects');
+          setProjects([...pinnedProjects]);
+        }
       } finally {
         setIsLoading(false);
       }
