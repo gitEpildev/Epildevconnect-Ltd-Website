@@ -106,11 +106,11 @@ const services: Service[] = [
   {
     title: '8 Ball Pool Services',
     description:
-      'Gameplay services for 8 Ball Pool by Miniclip. Cash, Coins and Cues delivered safely and quickly through our dedicated 8BP Rewards platform.',
+      'Services for 8 Ball Pool by Miniclip: Cash, Coins, Cues and more, handled directly by me. Looking for free rewards instead? Check out 8BP Rewards, our separate free rewards platform.',
     icon: Target,
     color: '#eab308',
     features: ['Cash & Coins', 'Cue unlocks', 'Fast turnaround', 'Trusted service'],
-    link: { label: 'Visit 8BP Rewards', url: 'https://8ballpool.website/8bp-rewards/home' },
+    link: { label: 'Free rewards: 8BP Rewards', url: 'https://8ballpool.website/8bp-rewards/home' },
   },
   {
     title: 'Custom Coding Solutions',
