@@ -1867,7 +1867,6 @@ VPS_STORAGE=960 GB NVMe
 # Social Links (Frontend - VITE_ prefix)
 VITE_SOCIAL_GITHUB=https://github.com/username
 VITE_SOCIAL_DISCORD=https://discord.com/users/userid
-VITE_SOCIAL_TWITTER=https://twitter.com/username
 VITE_SOCIAL_LINKEDIN=https://linkedin.com/in/username
 ```
 

@@ -146,7 +146,6 @@ Edit these files to personalize:
 Add to `.env`:
 
 ```env
-VITE_SOCIAL_TWITTER=https://x.com/your_handle
 VITE_SOCIAL_INSTAGRAM=https://instagram.com/your_handle
 VITE_SOCIAL_YOUTUBE=https://youtube.com/@your_channel
 VITE_SOCIAL_DISCORD=https://discord.gg/your_server

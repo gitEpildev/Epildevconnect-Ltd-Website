@@ -36,7 +36,6 @@ Created proper TypeScript declarations for Vite environment variables:
 
 ```typescript
 interface ImportMetaEnv {
-  readonly VITE_SOCIAL_TWITTER?: string;
   readonly VITE_SOCIAL_INSTAGRAM?: string;
   // ... all other VITE_ variables
 }

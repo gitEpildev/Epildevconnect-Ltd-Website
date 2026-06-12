@@ -85,7 +85,6 @@ API_PORT=1700
 SESSION_SECRET=generate_random_string_here
 
 # Social Links (Frontend accessible with VITE_ prefix)
-VITE_SOCIAL_TWITTER=https://x.com/your_handle
 VITE_SOCIAL_INSTAGRAM=https://instagram.com/your_handle
 VITE_SOCIAL_YOUTUBE=https://youtube.com/@your_channel
 VITE_SOCIAL_TIKTOK=https://tiktok.com/@your_handle

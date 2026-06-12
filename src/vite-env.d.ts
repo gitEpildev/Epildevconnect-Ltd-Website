@@ -3,7 +3,6 @@
 interface ImportMetaEnv {
   readonly VITE_DISCORD_USER_ID: string;
   readonly VITE_ADMIN_DISCORD_ID?: string;
-  readonly VITE_SOCIAL_TWITTER?: string;
   readonly VITE_SOCIAL_INSTAGRAM?: string;
   readonly VITE_SOCIAL_YOUTUBE?: string;
   readonly VITE_SOCIAL_TIKTOK?: string;
