@@ -33,7 +33,9 @@ function CircularGauge({ value, max, label, unit, color = '#00d9ff' }: {
       </div>
       <div className="text-center">
         <p className="text-xs text-gray-500 font-mono">{label}</p>
-        <p className="text-xs text-gray-400 font-mono">{value}{unit} / {max}{unit}</p>
+        {unit !== '%' && (
+          <p className="text-xs text-gray-400 font-mono">{value}{unit} / {max}{unit}</p>
+        )}
       </div>
     </div>
   );
@@ -87,11 +89,11 @@ export default function SystemSpecs() {
   const macSpecs = specs.data.mac;
   const vpsSpecs = specs.data.vps;
 
-  const vpsRamUsed = parseGBValue(vpsSpecs.ram?.split('/')[0] || '0');
-  const vpsRamTotal = 128;
-  const vpsStorageUsed = parseGBValue(vpsSpecs.storage?.split('/')[0] || '0');
-  const vpsStorageTotal = parseGBValue(vpsSpecs.storage?.split('/')[1] || '960') || 960;
-  const vpsCpu = parseCpuPercent(vpsSpecs.cpu);
+  const vpsRamUsed = vpsSpecs.ramUsedGB ?? parseGBValue(vpsSpecs.ram?.split('/')[0] || '0');
+  const vpsRamTotal = vpsSpecs.ramTotalGB ?? 128;
+  const vpsStorageUsed = vpsSpecs.storageUsedGB ?? parseGBValue(vpsSpecs.storage?.split('/')[0] || '0');
+  const vpsStorageTotal = vpsSpecs.storageTotalGB ?? (parseGBValue(vpsSpecs.storage?.split('/')[1] || '960') || 960);
+  const vpsCpu = parseFloat(vpsSpecs.cpuUsagePercent) || parseCpuPercent(vpsSpecs.cpu);
 
   const SpecItem = ({ icon: Icon, label, value }: { icon: any; label: string; value: string }) => (
     <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] transition-all group">
@@ -174,20 +176,12 @@ export default function SystemSpecs() {
               </span>
             </div>
 
-            {/* Gauges row */}
-            {(vpsRamTotal > 0 || vpsCpu > 0) && (
-              <div className="flex justify-around mb-5 py-4 px-2 rounded-xl bg-white/[0.02]">
-                {vpsCpu > 0 && (
-                  <CircularGauge value={vpsCpu} max={100} label="CPU" unit="%" color="#00d9ff" />
-                )}
-                {vpsRamTotal > 0 && (
-                  <CircularGauge value={vpsRamUsed} max={vpsRamTotal} label="RAM" unit="GB" color="#8b5cf6" />
-                )}
-                {vpsStorageTotal > 0 && (
-                  <CircularGauge value={vpsStorageUsed} max={vpsStorageTotal} label="Disk" unit="GB" color="#0ea5e9" />
-                )}
-              </div>
-            )}
+            {/* Live usage gauges */}
+            <div className="flex justify-around mb-5 py-4 px-2 rounded-xl bg-white/[0.02]">
+              <CircularGauge value={vpsCpu} max={100} label="CPU" unit="%" color="#00d9ff" />
+              <CircularGauge value={vpsRamUsed} max={vpsRamTotal} label="RAM" unit="GB" color="#8b5cf6" />
+              <CircularGauge value={vpsStorageUsed} max={vpsStorageTotal} label="Disk" unit="GB" color="#0ea5e9" />
+            </div>
 
             <div className="space-y-2">
               <SpecItem icon={Cpu} label="Processor" value="16 Core x 3.0 GHz (AMD EPYC 7302P)" />

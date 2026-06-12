@@ -8,6 +8,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import os from 'os';
+import { execSync } from 'child_process';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { pool, initializeDatabase, getOrCreateConversation, logUserLogin, isUserBlocked, getProjectDescription, saveProjectDescription } from './db.js';
 import { generateProjectDescription, isPlaceholderDescription } from './services/openai.js';
@@ -1593,19 +1594,46 @@ app.get('/api/github/code-snippets', handleGitHubCodeSnippets);
 // Handler definition:
 async function handleSystemSpecs(req, res) {
     try {
-        console.log('[SystemSpecs] Request received, path:', req.path, 'originalUrl:', req.originalUrl);
-        // VPS Specs (auto-detected)
+        // Server specs (auto-detected)
         const cpus = os.cpus();
         const cpuModel = cpus.length > 0 ? cpus[0].model : 'Unknown';
         const cpuCores = cpus.length;
         const totalMem = os.totalmem();
-        const freeMem = os.freemem();
-        const usedMem = totalMem - freeMem;
-        // Format memory in GB - always show 64 GB RAM for VPS
-        const formatBytes = (bytes) => {
-            // Always return 64 GB RAM for VPS (hardcoded as per user request)
-            return '64 GB RAM';
-        };
+        // RAM usage: prefer /proc/meminfo MemAvailable (os.freemem() ignores page
+        // cache on Linux and overstates usage)
+        let usedMem = totalMem - os.freemem();
+        try {
+            const meminfo = execSync('cat /proc/meminfo', { encoding: 'utf8' });
+            const totalMatch = meminfo.match(/MemTotal:\s+(\d+) kB/);
+            const availMatch = meminfo.match(/MemAvailable:\s+(\d+) kB/);
+            if (totalMatch && availMatch) {
+                usedMem = (parseInt(totalMatch[1]) - parseInt(availMatch[1])) * 1024;
+            }
+        }
+        catch {
+            // Not Linux or /proc unavailable; fall back to os.freemem()
+        }
+        // Hardware has 128 GB fitted; the kernel reports slightly less as usable
+        const ramTotalGB = 128;
+        const ramUsedGB = Math.round((usedMem / 1024 ** 3) * 10) / 10;
+        // Disk usage from df (root filesystem)
+        let storage = process.env.VPS_STORAGE || '960 GB NVMe';
+        let storageUsedGB = 0;
+        let storageTotalGB = 960;
+        try {
+            const df = execSync('df -k /', { encoding: 'utf8' }).trim().split('\n').pop() || '';
+            const parts = df.split(/\s+/);
+            const totalKB = parseInt(parts[1]);
+            const usedKB = parseInt(parts[2]);
+            if (totalKB > 0) {
+                storageUsedGB = Math.round(usedKB / 1024 / 1024);
+                storageTotalGB = Math.round(totalKB / 1024 / 1024 / 10) * 10; // drive is sold as 960 GB
+                storage = `${storageUsedGB}GB / ${storageTotalGB}GB NVMe`;
+            }
+        }
+        catch {
+            // df unavailable; keep the static description
+        }
         // Calculate CPU usage
         // Get initial CPU times
         const initialCpus = os.cpus();
@@ -1625,20 +1653,18 @@ async function handleSystemSpecs(req, res) {
         const idleDiff = finalIdle - initialIdle;
         const cpuUsed = totalDiff - idleDiff;
         const cpuUsagePercent = totalDiff > 0 ? ((cpuUsed / totalDiff) * 100).toFixed(1) : '0.0';
-        // Detect if AMD EPYC (common in VPS)
-        const isAMDEPYC = cpuModel.includes('EPYC') || cpuModel.includes('AMD');
-        const cpuInfo = isAMDEPYC ? `${cpuCores} vCPU AMD EPYC` : `${cpuCores} vCPU ${cpuModel}`;
         const vpsSpecs = {
-            cpu: cpuInfo,
+            cpu: `${cpuUsagePercent}% (${cpuCores} cores)`,
             cpuCores: cpuCores,
             cpuModel: cpuModel,
             cpuUsagePercent: cpuUsagePercent,
-            ram: formatBytes(totalMem),
-            ramTotal: totalMem,
-            ramUsed: usedMem,
-            ramFree: freeMem,
-            ramUsedPercent: ((usedMem / totalMem) * 100).toFixed(1),
-            storage: process.env.VPS_STORAGE || '960 GB NVMe',
+            ram: `${ramUsedGB}GB / ${ramTotalGB}GB`,
+            ramUsedGB: ramUsedGB,
+            ramTotalGB: ramTotalGB,
+            ramUsedPercent: ((ramUsedGB / ramTotalGB) * 100).toFixed(1),
+            storage: storage,
+            storageUsedGB: storageUsedGB,
+            storageTotalGB: storageTotalGB,
             os: os.platform(),
             osRelease: os.release(),
             hostname: os.hostname(),
@@ -1652,7 +1678,6 @@ async function handleSystemSpecs(req, res) {
             storage: process.env.MAC_STORAGE || 'Macintosh HD',
             os: process.env.MAC_OS || 'Tahoe 26.2',
         };
-        console.log('[SystemSpecs] Returning specs:', { mac: macSpecs, vps: vpsSpecs });
         res.json({
             mac: macSpecs,
             vps: vpsSpecs,
