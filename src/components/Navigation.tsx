@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Shield,
   Monitor,
+  Sparkles,
   Menu, 
   X 
 } from 'lucide-react';
@@ -18,12 +19,13 @@ import axios from 'axios';
 
 const baseNavItems = [
   { name: 'Home', path: '/home', icon: Home },
-  { name: 'Contact', path: '/contact', icon: Mail },
+  { name: 'Services', path: '/services', icon: Sparkles },
   { name: 'Projects', path: '/projects', icon: FolderGit2 },
   { name: 'Tech Stack', path: '/tech-stack', icon: Wrench },
+  { name: 'Experience', path: '/experience', icon: Briefcase },
   { name: 'System Specs', path: '/system-specs', icon: Monitor },
   { name: 'Code Viewer', path: '/code-viewer', icon: Code2 },
-  { name: 'Experience', path: '/experience', icon: Briefcase },
+  { name: 'Contact', path: '/contact', icon: Mail },
 ];
 
 const messagesNavItem = { name: 'Messages', path: '/messages', icon: MessageSquare };
@@ -49,20 +51,23 @@ export default function Navigation() {
       const adminId = import.meta.env.VITE_ADMIN_DISCORD_ID || '850726663289700373';
       
       if (userId) {
-        // User is logged in
         setIsLoggedIn(true);
-        
+        // Insert Messages right before Contact (the last base item)
+        const lastIdx = baseNavItems.length - 1;
+        const baseWithMessages = [
+          ...baseNavItems.slice(0, lastIdx),
+          messagesNavItem,
+          baseNavItems[lastIdx],
+        ];
+
         if (userId === adminId) {
-          // Admin user: show base + messages + admin
           setIsAdmin(true);
-          setNavItems([...baseNavItems.slice(0, 6), messagesNavItem, baseNavItems[6], adminNavItem]);
+          setNavItems([...baseWithMessages, adminNavItem]);
         } else {
-          // Regular logged-in user: show base + messages
           setIsAdmin(false);
-          setNavItems([...baseNavItems.slice(0, 6), messagesNavItem, baseNavItems[6]]);
+          setNavItems(baseWithMessages);
         }
       } else {
-        // Not logged in: show only base items
         setIsLoggedIn(false);
         setIsAdmin(false);
         setNavItems(baseNavItems);
@@ -85,17 +90,28 @@ export default function Navigation() {
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
-                `p-3 rounded-xl transition-all duration-300 group relative ${
+                `p-3 rounded-xl transition-colors duration-300 group relative ${
                   isActive
-                    ? 'bg-quantum-glow bg-opacity-20 text-quantum-glow'
+                    ? 'text-quantum-glow'
                     : 'text-gray-400 hover:text-quantum-glow hover:bg-white hover:bg-opacity-5'
                 }`
               }
             >
-              <item.icon className="w-6 h-6" />
-              <span className="absolute right-full mr-4 top-1/2 -translate-y-1/2 px-3 py-2 bg-dark-800 rounded-lg text-sm font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-                {item.name}
-              </span>
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <motion.span
+                      layoutId="nav-active"
+                      className="absolute inset-0 rounded-xl bg-quantum-glow/15 border border-quantum-glow/25"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                  <item.icon className="w-6 h-6 relative" />
+                  <span className="absolute right-full mr-4 top-1/2 -translate-y-1/2 px-3 py-2 bg-dark-800 rounded-lg text-sm font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                    {item.name}
+                  </span>
+                </>
+              )}
             </NavLink>
           ))}
         </div>

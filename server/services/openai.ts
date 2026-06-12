@@ -115,8 +115,8 @@ Write 1-2 sentences (max 120 characters total). What does it do? Why does it exi
 
     // Post-process to ensure UK English and no em dashes
     let processed = generatedDescription
-      .replace(/—/g, '-') // Replace em dashes with hyphens
-      .replace(/–/g, '-') // Replace en dashes with hyphens
+      .replace(/\u2014/g, '-') // Replace em dashes with hyphens
+      .replace(/\u2013/g, '-') // Replace en dashes with hyphens
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
 

@@ -37,7 +37,7 @@ export default function PrivacyPolicy() {
               Introduction
             </h2>
             <p className="text-gray-300 leading-relaxed">
-              This Privacy Policy explains how MY HUB ("we", "us", or "our") collects, uses, and protects your personal information when you use our website and services.
+              This Privacy Policy explains how Epildevconnect Ltd ("we", "us", or "our") collects, uses, and protects your personal information when you use our website and services.
             </p>
           </section>
 

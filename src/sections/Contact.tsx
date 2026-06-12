@@ -84,7 +84,8 @@ export default function Contact() {
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
           transition={{ duration: 0.6 }}
           className="mb-12 text-center"
         >
@@ -103,9 +104,10 @@ export default function Contact() {
           {/* Contact Form */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="glass rounded-2xl p-8"
+            className="glass glass-hover rounded-2xl p-8"
           >
             <h3 className="text-2xl font-mono font-bold mb-6">
               {user ? 'Send Discord Message' : 'Send Email'}
@@ -245,7 +247,8 @@ export default function Contact() {
           {/* Info Panel */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.3 }}
             className="space-y-6"
           >

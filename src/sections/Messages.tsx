@@ -182,7 +182,8 @@ export default function Messages() {
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
           transition={{ duration: 0.6 }}
           className="mb-8"
         >
@@ -211,7 +212,8 @@ export default function Messages() {
         {/* Discord-like Layout */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.1 }}
           className="glass rounded-2xl overflow-hidden h-full min-h-0 flex flex-col lg:flex-row"
         >

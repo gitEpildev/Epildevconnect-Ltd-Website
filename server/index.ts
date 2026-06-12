@@ -1150,12 +1150,15 @@ const handleWakaTime = async (req: express.Request, res: express.Response) => {
       });
     });
 
-    const languageArray = Object.values(languages)
+    const realLangs = (Object.values(languages) as any[])
+      .filter((l) => l.name !== 'Other' && l.total_seconds >= 60);
+    const realTotal = realLangs.reduce((sum: number, l: any) => sum + l.total_seconds, 0) as number;
+    const languageArray = realLangs
       .sort((a: any, b: any) => b.total_seconds - a.total_seconds)
       .map((lang: any) => ({
         name: lang.name,
         total_seconds: lang.total_seconds,
-        percent: totalSeconds > 0 ? Math.round((lang.total_seconds / totalSeconds) * 100 * 100) / 100 : 0,
+        percent: realTotal > 0 ? Math.round((lang.total_seconds / realTotal) * 100 * 100) / 100 : 0,
         text: formatDuration(lang.total_seconds)
       }));
 
@@ -1168,8 +1171,12 @@ const handleWakaTime = async (req: express.Request, res: express.Response) => {
         text: formatDuration(editor.total_seconds)
       }));
 
-    const hours = Math.floor(totalSeconds / 3600);
-    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const codingSeconds = (Object.values(languages) as any[])
+      .filter((l) => l.name !== 'Other')
+      .reduce((sum: number, l: any) => sum + l.total_seconds, 0) as number;
+    const displaySeconds = codingSeconds > 0 ? codingSeconds : totalSeconds;
+    const hours = Math.floor(displaySeconds / 3600);
+    const mins = Math.floor((displaySeconds % 3600) / 60);
     const humanReadableTotal = hours > 0 ? `${hours} hrs ${mins} mins` : `${mins} mins`;
 
     res.json({
@@ -1453,8 +1460,7 @@ const handleGitHubRepos = async (req: express.Request, res: express.Response) =>
         } else if (repo.name === 'MyLink') {
           demoUrl = 'https://developer.epildevconnect.uk/';
         } else if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
-          // For 8bp-rewards projects, use GitHub repo URL as demo
-          demoUrl = repo.html_url;
+          demoUrl = 'https://8ballpool.website/8bp-rewards/home';
         }
         
         // Description handling with OpenAI integration
@@ -1539,6 +1545,13 @@ const handleGitHubRepos = async (req: express.Request, res: express.Response) =>
           title = 'Discord Giveaway BOT';
         }
         
+        let image: string | undefined;
+        if (repo.name.includes('8bp') || repo.name.includes('rewards')) {
+          image = '/8bp-logo.png';
+        } else if (repo.name === 'BTD6-Auto-Assign') {
+          image = '/btd6-logo.png?v=2';
+        }
+
         return {
           id: repo.id,
           title: title,
@@ -1964,9 +1977,10 @@ app.use('/api', apiRouter);
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.round(seconds % 60);
   if (hours > 0) return `${hours} hrs ${mins} mins`;
   if (mins > 0) return `${mins} mins`;
-  return `${seconds} secs`;
+  return `${secs} secs`;
 }
 
 // Contact Form Routes
@@ -2175,6 +2189,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Serve public assets (logos, images)
+app.use(express.static('public'));
 // Serve static assets (JS, CSS, images) - must come AFTER all API routes
 app.use(express.static('dist', {
   setHeaders: (res, filePath) => {

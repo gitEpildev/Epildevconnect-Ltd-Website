@@ -124,40 +124,19 @@ export default function DiscordPresence({
   const hasDataProp = data !== null && data !== undefined; // Lanyard hook has returned something
   const hasProfileDataProp = profileData !== null && profileData !== undefined; // Profile hook has returned something
   
-  // Update hasEverRendered if we have ANY indication of data (even if displayUser is null)
-  // CRITICAL: Don't require displayUser to exist - data prop existence is enough
+  // Track first successful load so the panel never disappears once rendered
   useEffect(() => {
     if ((hasDataProp || hasProfileDataProp) && !hasEverRendered) {
-      console.log('[DiscordPresence] Marking as rendered - data received');
       setHasEverRendered(true);
       try {
         sessionStorage.setItem(storageKey, 'true');
-      } catch (e) {
-        console.warn('[DiscordPresence] Failed to save to sessionStorage:', e);
+      } catch {
+        // sessionStorage unavailable; skeleton may reappear on remount
       }
     }
   }, [hasDataProp, hasProfileDataProp, hasEverRendered, storageKey]);
-  
-  // DEBUG: Log component render state
-  console.log('[DiscordPresence] Render:', {
-    data: data !== null && data !== undefined,
-    profileData: profileData !== null && profileData !== undefined,
-    displayUser: !!displayUser,
-    hasDataProp,
-    hasProfileDataProp,
-    hasEverRendered,
-    isLoading,
-    profileIsLoading,
-    isInitialLoad: !hasEverRendered,
-    timestamp: new Date().toISOString()
-  });
-  
-  // CRITICAL: Only show loading if we've NEVER rendered with data before
-  // DEFENSIVE: Once we've rendered once, ALWAYS render the panel (even if displayUser is temporarily null)
-  const isInitialLoad = !hasEverRendered;
-  
-  if (isInitialLoad) {
-    console.log('[DiscordPresence] Showing loading skeleton (no data yet)');
+
+  if (!hasEverRendered) {
     return (
       <div className="glass rounded-2xl p-6 h-full">
         <div className="animate-pulse space-y-4">
@@ -168,16 +147,10 @@ export default function DiscordPresence({
     );
   }
 
-  // CRITICAL: If we've received data before (even if current fetch failed), ALWAYS render
-  // The hook guarantees data exists once loaded, so we should always have something to show
-  console.log('[DiscordPresence] Rendering with data (hasEverReceivedAnyData=true)');
-  
-  // ALWAYS render the panel structure - use fallbacks for missing data
-  // NEVER return early or hide the panel once it has been rendered once
-  // Even if offline, show profile data (avatar, username, bio, badges) - only status changes
-  
   const activities = (presence?.activities || []);
-  const spotify = activities.find((a: any) => a.type === 2);
+  const listeningActivity = activities.find((a: any) => a.type === 2);
+  const musicApp = activities.find((a: any) => a.type === 0 && a.name?.toLowerCase().includes('music'));
+  const spotify = listeningActivity || musicApp;
 
   const statusIcons = {
     online: `${import.meta.env.BASE_URL}status-icons/online.png`,
@@ -276,35 +249,15 @@ export default function DiscordPresence({
                              displayUser?.avatar_decoration_data || // From displayUser
                              presence?.discord_user?.avatar_decoration_data; // From Lanyard presence
                            
-                           // Debug logging
-                           if (decorationData) {
-                             console.log('[Avatar Decoration] Found decoration data:', decorationData);
-                             console.log('[Avatar Decoration] profileData?.avatar_decoration:', profileData?.avatar_decoration);
-                             console.log('[Avatar Decoration] profileData?.user?.avatar_decoration_data:', profileData?.user?.avatar_decoration_data);
-                             console.log('[Avatar Decoration] displayUser?.avatar_decoration_data:', displayUser?.avatar_decoration_data);
-                             console.log('[Avatar Decoration] presence?.discord_user?.avatar_decoration_data:', presence?.discord_user?.avatar_decoration_data);
-                           }
-                           
                            const decorationUrl = getAvatarDecorationUrl(decorationData);
-                           
-                           if (decorationUrl) {
-                             console.log('[Avatar Decoration] Generated URL:', decorationUrl);
-                           } else {
-                             console.log('[Avatar Decoration] No URL generated - decorationData:', decorationData);
-                           }
-                           
+
                            return decorationUrl ? (
                              <img
                                src={decorationUrl}
                                alt="Avatar Decoration"
                                className="absolute inset-0 w-full h-full object-contain pointer-events-none z-20"
                                onError={(e) => {
-                                 console.error('[Avatar Decoration] Image failed to load:', decorationUrl);
-                                 // Hide decoration if image fails to load
                                  e.currentTarget.style.display = 'none';
-                               }}
-                               onLoad={() => {
-                                 console.log('[Avatar Decoration] Image loaded successfully:', decorationUrl);
                                }}
                              />
                            ) : null;
@@ -326,61 +279,6 @@ export default function DiscordPresence({
               </div>
             </div>
 
-            {/* Badges */}
-            {profileData?.badges && profileData.badges.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {profileData.badges.map((badge: string) => {
-                  // Special handling for clan badge
-                  if (badge === 'clan_badge' && profileData.clan) {
-                    return (
-                      <div
-                        key={badge}
-                        className="group relative"
-                        title={`Clan: ${profileData.clan.tag}`}
-                      >
-                        <img
-                          src={`https://cdn.discordapp.com/clan-badges/${profileData.clan.identity_guild_id}/${profileData.clan.badge}.png?size=64`}
-                          alt={`Clan ${profileData.clan.tag}`}
-                          className="w-6 h-6 hover:scale-110 transition-transform"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                          Clan: {profileData.clan.tag}
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  const badgeData = badgeInfo[badge];
-                  if (!badgeData) return null;
-                  
-                  return (
-                    <div
-                      key={badge}
-                      className="group relative"
-                      title={badgeData.name}
-                    >
-                      <img
-                        src={badgeData.useLocal ? badgeData.icon : `https://cdn.discordapp.com/badge-icons/${badgeData.icon}.png?size=64`}
-                        alt={badgeData.name}
-                        className="w-6 h-6 hover:scale-110 transition-transform"
-                        onError={(e) => {
-                          console.error(`Badge failed to load: ${badge} (${badgeData.name})`);
-                          console.error(`Icon URL: ${badgeData.useLocal ? badgeData.icon : `https://cdn.discordapp.com/badge-icons/${badgeData.icon}.png`}`);
-                          // Show a placeholder instead of hiding
-                          e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"%3E%3Crect width="24" height="24" fill="%2300d9ff" opacity="0.2" rx="4"/%3E%3Ctext x="12" y="16" font-family="Arial" font-size="12" fill="%2300d9ff" text-anchor="middle"%3E?%3C/text%3E%3C/svg%3E';
-                        }}
-                      />
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                        {badgeData.name}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
 
             {/* Bio */}
             <div className="space-y-2 text-sm text-gray-300 leading-relaxed">
@@ -399,11 +297,11 @@ export default function DiscordPresence({
 
             {/* Spotify Activity */}
             {spotify && (
-              <div className="bg-[#1DB954] bg-opacity-10 rounded-xl p-3 border border-[#1DB954] border-opacity-20">
+              <div className={`${spotify.name === 'Spotify' ? 'bg-[#1DB954]' : 'bg-[#FC3C44]'} bg-opacity-10 rounded-xl p-3 border ${spotify.name === 'Spotify' ? 'border-[#1DB954]' : 'border-[#FC3C44]'} border-opacity-20`}>
                 <div className="flex items-center gap-2 mb-2">
-                  <Music className="w-4 h-4 text-[#1DB954]" />
-                  <span className="text-xs font-mono text-[#1DB954]">
-                    {actuallyOffline ? 'Was listening to Spotify' : 'Listening to Spotify'}
+                  <Music className={`w-4 h-4 ${spotify.name === 'Spotify' ? 'text-[#1DB954]' : 'text-[#FC3C44]'}`} />
+                  <span className={`text-xs font-mono ${spotify.name === 'Spotify' ? 'text-[#1DB954]' : 'text-[#FC3C44]'}`}>
+                    {actuallyOffline ? `Was listening to ${spotify.name || 'music'}` : `${spotify.name || 'Listening'}`}
                   </span>
                 </div>
                 <p className="text-sm font-semibold truncate">{spotify.details}</p>
@@ -416,7 +314,7 @@ export default function DiscordPresence({
 
             {/* Other Activities */}
             {activities
-              .filter((a: any) => a.type !== 2 && a.type !== 4)
+              .filter((a: any) => a.type !== 2 && a.type !== 4 && !(a.name && a.name.toLowerCase().includes('music')))
               .map((activity: any, index: number) => {
                 const activityType = activity.type === 0 ? 'Playing' : 
                                     activity.type === 1 ? 'Streaming' : 

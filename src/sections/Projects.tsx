@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
-import { ExternalLink, Github, FolderGit2, Loader2 } from 'lucide-react';
+import { ExternalLink, Github, FolderGit2, Loader2, Star, GitFork } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchGitHubRepos } from '../utils/api';
+import { useTilt } from '../utils/useTilt';
 
 interface Project {
   id: number;
@@ -14,6 +15,121 @@ interface Project {
   updatedAt?: string;
   stars?: number;
   forks?: number;
+  image?: string;
+}
+
+const pinnedProjects: Project[] = [
+  {
+    id: -1,
+    title: 'TeleHop',
+    description: 'A Minecraft server plugin for seamless teleportation with intuitive commands and a smooth player experience.',
+    tech: ['Java', 'Spigot API', 'Minecraft'],
+    github: 'https://github.com/gitEpildev/TeleHop',
+    demo: 'https://modrinth.com/plugin/telehop',
+    featured: true,
+    image: '/telehop-logo.png',
+  },
+];
+
+const pinnedNames = new Set(pinnedProjects.map(p => p.title.toLowerCase()));
+
+function ProjectCard({ project, index }: { project: Project; index: number }) {
+  const tilt = useTilt(4);
+
+  return (
+    <motion.div
+      ref={tilt.ref}
+      onMouseMove={tilt.onMouseMove}
+      onMouseLeave={tilt.onMouseLeave}
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-40px' }}
+      transition={{ duration: 0.55, delay: index * 0.07, ease: [0.22, 1, 0.36, 1] }}
+      className={`glass glass-hover rounded-2xl flex flex-col overflow-hidden group ${
+        project.featured ? 'ring-1 ring-quantum-glow/20' : ''
+      }`}
+      style={{ transformStyle: 'preserve-3d', transition: 'transform 0.2s ease-out' }}
+    >
+      {/* Image area - only for projects with a custom image */}
+      {project.image && (
+        <div className="h-36 w-full relative overflow-hidden bg-white/[0.02] flex items-center justify-center">
+          <img
+            src={project.image}
+            alt={project.title}
+            className="h-full w-auto object-contain drop-shadow-[0_0_20px_rgba(0,217,255,0.15)] p-5"
+          />
+          {project.featured && (
+            <span className="absolute top-3 left-3 px-2 py-0.5 bg-quantum-glow/10 backdrop-blur-sm text-quantum-glow text-[10px] font-mono font-bold rounded-md tracking-widest border border-quantum-glow/15">
+              FEATURED
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="p-5 flex flex-col flex-grow">
+        {/* Title row with stats */}
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <h3 className="text-lg font-semibold tracking-tight">{project.title}</h3>
+          {(project.stars !== undefined && project.stars > 0) && (
+            <div className="flex items-center gap-2.5 text-gray-500 text-xs font-mono flex-shrink-0 mt-1">
+              <span className="flex items-center gap-1"><Star className="w-3 h-3" />{project.stars}</span>
+              {(project.forks !== undefined && project.forks > 0) && (
+                <span className="flex items-center gap-1"><GitFork className="w-3 h-3" />{project.forks}</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Featured badge inline for non-image cards */}
+        {project.featured && !project.image && (
+          <span className="inline-block w-fit px-2 py-0.5 bg-quantum-glow/10 text-quantum-glow text-[10px] font-mono font-bold rounded-md tracking-widest border border-quantum-glow/15 mb-2">
+            FEATURED
+          </span>
+        )}
+
+        <p className="text-gray-400 text-sm mb-4 flex-grow leading-relaxed">
+          {project.description}
+        </p>
+
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {project.tech.slice(0, 5).map((tech, i) => (
+            <span
+              key={i}
+              className="px-2 py-0.5 bg-white/[0.06] text-[11px] font-mono rounded-md text-gray-300"
+            >
+              {tech}
+            </span>
+          ))}
+          {project.tech.length > 5 && (
+            <span className="px-2 py-0.5 text-[11px] font-mono text-gray-500">
+              +{project.tech.length - 5}
+            </span>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-3 border-t border-white/[0.06]">
+          <a
+            href={project.github}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.05] hover:bg-white/[0.1] rounded-lg transition-all text-xs font-mono"
+          >
+            {project.github.includes('github.com') ? <Github className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
+            {project.github.includes('github.com') ? 'Code' : 'View'}
+          </a>
+          <a
+            href={project.demo}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-quantum-glow/15 hover:bg-quantum-glow/25 text-quantum-glow rounded-lg transition-all text-xs font-mono"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Demo
+          </a>
+        </div>
+      </div>
+    </motion.div>
+  );
 }
 
 export default function Projects() {
@@ -28,32 +144,34 @@ export default function Projects() {
         setError(null);
         const data = await fetchGitHubRepos();
         if (data && data.projects && Array.isArray(data.projects)) {
-          setProjects(data.projects);
+          const filtered = data.projects.filter(
+            (p: Project) => !pinnedNames.has(p.title.toLowerCase())
+          );
+          setProjects([...pinnedProjects, ...filtered]);
         } else {
-          setProjects([]);
+          setProjects([...pinnedProjects]);
         }
       } catch (err: any) {
         console.error('[Projects] Failed to load projects:', err);
         setError(err.response?.data?.message || 'Failed to load projects');
-        // Keep empty array on error - don't show fallback projects
-        setProjects([]);
+        setProjects([...pinnedProjects]);
       } finally {
         setIsLoading(false);
       }
     };
 
     loadProjects();
-    // Refresh every 5 minutes
     const interval = setInterval(loadProjects, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
+
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
           transition={{ duration: 0.6 }}
           className="mb-12"
         >
@@ -68,19 +186,18 @@ export default function Projects() {
           </p>
         </motion.div>
 
-        {/* Projects Grid */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-8 h-8 text-quantum-glow animate-spin" />
-              <p className="text-gray-400 font-mono">Loading projects from GitHub...</p>
+              <p className="text-gray-500 font-mono text-sm">Loading projects from GitHub...</p>
             </div>
           </div>
         ) : error ? (
           <div className="flex items-center justify-center py-20">
-            <div className="text-center">
+            <div className="glass rounded-2xl p-8 text-center max-w-md">
               <p className="text-red-400 font-mono mb-2">Error loading projects</p>
-              <p className="text-gray-500 text-sm font-mono">{error}</p>
+              <p className="text-gray-500 text-sm">{error}</p>
             </div>
           </div>
         ) : projects.length === 0 ? (
@@ -88,62 +205,9 @@ export default function Projects() {
             <p className="text-gray-400 font-mono">No projects found</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {projects.map((project, index) => (
-            <motion.div
-              key={project.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: index * 0.1 }}
-              className={`glass glass-hover rounded-2xl p-6 flex flex-col ${
-                project.featured ? 'ring-2 ring-quantum-glow ring-opacity-30' : ''
-              }`}
-            >
-              {project.featured && (
-                <span className="inline-block px-3 py-1 bg-quantum-glow bg-opacity-20 text-quantum-glow text-xs font-mono rounded-lg mb-4 w-fit">
-                  FEATURED
-                </span>
-              )}
-
-              <h3 className="text-xl font-mono font-bold mb-3">{project.title}</h3>
-              <p className="text-gray-400 text-sm mb-4 flex-grow">
-                {project.description}
-              </p>
-
-              {/* Tech Stack */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                {project.tech.map((tech, i) => (
-                  <span
-                    key={i}
-                    className="px-2 py-1 bg-white bg-opacity-5 text-xs font-mono rounded"
-                  >
-                    {tech}
-                  </span>
-                ))}
-              </div>
-
-              {/* Links */}
-              <div className="flex gap-3 pt-4 border-t border-gray-700">
-                <a
-                  href={project.github}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-5 hover:bg-opacity-10 rounded-lg transition-all text-sm font-mono"
-                >
-                  <Github className="w-4 h-4" />
-                  Code
-                </a>
-                <a
-                  href={project.demo}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 bg-quantum-glow bg-opacity-20 hover:bg-opacity-30 text-quantum-glow rounded-lg transition-all text-sm font-mono"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Demo
-                </a>
-              </div>
-            </motion.div>
+              <ProjectCard key={project.id} project={project} index={index} />
             ))}
           </div>
         )}
@@ -151,5 +215,3 @@ export default function Projects() {
     </div>
   );
 }
-
-

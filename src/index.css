@@ -20,74 +20,18 @@
 }
 
 @layer utilities {
+  /* ============================================
+     GLASS CARD SYSTEM - animated conic border
+     ============================================ */
   .glass {
-    @apply bg-white bg-opacity-5 backdrop-blur-lg border border-white border-opacity-10;
-  }
-
-  .glass-hover {
-    @apply transition-all duration-300 hover:bg-opacity-10 hover:border-opacity-20;
-  }
-
-  .glow-text {
-    color: #00d9ff;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    text-shadow: 0 0 20px rgba(0, 217, 255, 0.5), 0 0 40px rgba(0, 217, 255, 0.3);
-  }
-
-  /* Hero title styling (landing page) */
-  .hero-title {
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.98) 0%,
-      rgba(0, 217, 255, 0.98) 38%,
-      rgba(139, 92, 246, 0.92) 70%,
-      rgba(255, 255, 255, 0.98) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    font-weight: 800;
-    letter-spacing: -0.06em;
-    text-shadow: 0 0 22px rgba(0, 217, 255, 0.22), 0 0 60px rgba(0, 217, 255, 0.12);
-  }
-
-  .section-heading {
-    background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    font-weight: 600;
-    letter-spacing: -0.03em;
-  }
-
-  .glow-box {
-    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3), 0 0 40px rgba(0, 217, 255, 0.1);
-    animation: gradient-glow 12s ease-in-out infinite;
-  }
-
-  /* Animated glow shadows */
-  @keyframes gradient-box-shadow {
-    0% {
-      box-shadow: 0 0 20px rgba(0, 217, 255, 0.4), 0 0 40px rgba(0, 217, 255, 0.2);
-    }
-    25% {
-      box-shadow: 0 0 20px rgba(0, 102, 255, 0.4), 0 0 40px rgba(0, 102, 255, 0.2);
-    }
-    50% {
-      box-shadow: 0 0 20px rgba(139, 92, 246, 0.4), 0 0 40px rgba(139, 92, 246, 0.2);
-    }
-    75% {
-      box-shadow: 0 0 20px rgba(0, 102, 255, 0.4), 0 0 40px rgba(0, 102, 255, 0.2);
-    }
-    100% {
-      box-shadow: 0 0 20px rgba(0, 217, 255, 0.4), 0 0 40px rgba(0, 217, 255, 0.2);
-    }
-  }
-
-  .glass {
-    @apply bg-white bg-opacity-5 backdrop-blur-lg border border-white border-opacity-10;
+    --glass-bg: rgba(255, 255, 255, 0.04);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
     position: relative;
+    overflow: hidden;
   }
 
   .glass::before {
@@ -96,12 +40,136 @@
     inset: 0;
     border-radius: inherit;
     padding: 1px;
-    background: linear-gradient(135deg, rgba(0, 217, 255, 0.2), rgba(0, 217, 255, 0.05));
+    background: conic-gradient(
+      from var(--border-angle, 0deg),
+      transparent 40%,
+      rgba(0, 217, 255, 0.3) 50%,
+      rgba(139, 92, 246, 0.2) 55%,
+      transparent 60%
+    );
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     pointer-events: none;
+    animation: rotate-border 8s linear infinite;
+    opacity: 0.5;
+    transition: opacity 0.5s ease;
+  }
+
+  .glass:hover::before {
+    opacity: 1;
+  }
+
+  @property --border-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
+
+  @keyframes rotate-border {
+    to { --border-angle: 360deg; }
+  }
+
+  /* Spotlight follow effect on glass cards */
+  .glass-spotlight {
+    --spot-x: 50%;
+    --spot-y: 50%;
+    background:
+      radial-gradient(
+        600px circle at var(--spot-x) var(--spot-y),
+        rgba(0, 217, 255, 0.06),
+        transparent 40%
+      ),
+      var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .glass-hover {
+    @apply transition-all duration-500;
+  }
+
+  .glass-hover:hover {
+    --glass-bg: rgba(255, 255, 255, 0.07);
+    --glass-border: rgba(0, 217, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 217, 255, 0.08), 0 0 0 1px rgba(0, 217, 255, 0.05);
+    transform: translateY(-2px);
+  }
+
+  /* ============================================
+     TEXT STYLES
+     ============================================ */
+  .glow-text {
+    color: #00d9ff;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 20px rgba(0, 217, 255, 0.5), 0 0 40px rgba(0, 217, 255, 0.3);
+  }
+
+  .hero-title {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 1) 0%,
+      rgba(0, 217, 255, 0.95) 30%,
+      rgba(139, 92, 246, 0.9) 60%,
+      rgba(0, 217, 255, 0.95) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 800;
+    letter-spacing: -0.06em;
+    animation: shimmer-text 6s ease-in-out infinite;
+  }
+
+  @keyframes shimmer-text {
+    0%, 100% { background-position: 0% center; }
+    50% { background-position: 100% center; }
+  }
+
+  .section-heading {
+    font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+    background: linear-gradient(135deg, #ffffff 0%, #a0a0b0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .glow-box {
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3), 0 0 40px rgba(0, 217, 255, 0.1);
+    animation: gradient-glow 12s ease-in-out infinite;
+  }
+
+  @keyframes gradient-box-shadow {
+    0%   { box-shadow: 0 0 20px rgba(0, 217, 255, 0.4), 0 0 40px rgba(0, 217, 255, 0.2); }
+    25%  { box-shadow: 0 0 20px rgba(0, 102, 255, 0.4), 0 0 40px rgba(0, 102, 255, 0.2); }
+    50%  { box-shadow: 0 0 20px rgba(139, 92, 246, 0.4), 0 0 40px rgba(139, 92, 246, 0.2); }
+    75%  { box-shadow: 0 0 20px rgba(0, 102, 255, 0.4), 0 0 40px rgba(0, 102, 255, 0.2); }
+    100% { box-shadow: 0 0 20px rgba(0, 217, 255, 0.4), 0 0 40px rgba(0, 217, 255, 0.2); }
+  }
+
+  /* ============================================
+     SHIMMER SKELETON LOADING
+     ============================================ */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 0%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.8s ease-in-out infinite;
+    border-radius: 8px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
   /* SVG icons with cyan color */
@@ -118,44 +186,184 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* ============================================
+     DISPLAY TYPOGRAPHY
+     ============================================ */
+  .heading-display {
+    font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .heading-gradient {
+    background: linear-gradient(
+      100deg,
+      #ffffff 0%,
+      #e7faff 35%,
+      #00d9ff 55%,
+      #8b5cf6 80%,
+      #ffffff 100%
+    );
+    background-size: 250% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hue-drift 9s ease-in-out infinite;
+  }
+
+  @keyframes hue-drift {
+    0%, 100% { background-position: 0% center; }
+    50% { background-position: 100% center; }
+  }
+
+  /* Section header kicker */
+  .section-kicker {
+    @apply text-[11px] font-mono uppercase tracking-widest text-gray-500;
+  }
+
+  /* ============================================
+     MARQUEE TICKER
+     ============================================ */
+  .marquee {
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+  }
+
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    gap: 2.5rem;
+    animation: marquee-scroll 32s linear infinite;
+  }
+
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  /* ============================================
+     PRIMARY CTA
+     ============================================ */
+  .cta-primary {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .cta-primary::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, 0.35) 50%, transparent 75%);
+    background-size: 250% 100%;
+    background-position: 200% 0;
+    transition: background-position 0.7s ease;
+  }
+
+  .cta-primary:hover::after {
+    background-position: -50% 0;
+  }
 }
 
-/* ========================================
-   GLOBAL ANIMATED GRADIENT FOR ALL CYAN ELEMENTS
-   Everything with quantum-glow color gets animated
-   ======================================== */
+/* ============================================
+   GRADIENT MESH BACKGROUND
+   ============================================ */
+.gradient-mesh {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
 
-/* Text color - cyan text */
+.gradient-mesh::before,
+.gradient-mesh::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.35;
+}
+
+.gradient-mesh::before {
+  width: 60vw;
+  height: 60vw;
+  top: -20%;
+  left: -10%;
+  background: radial-gradient(circle, rgba(0, 217, 255, 0.12), rgba(139, 92, 246, 0.08), transparent 70%);
+  animation: mesh-drift-1 25s ease-in-out infinite;
+}
+
+.gradient-mesh::after {
+  width: 50vw;
+  height: 50vw;
+  bottom: -15%;
+  right: -10%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.1), rgba(0, 102, 255, 0.06), transparent 70%);
+  animation: mesh-drift-2 30s ease-in-out infinite;
+}
+
+@keyframes mesh-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(8vw, 5vh) scale(1.1); }
+  66% { transform: translate(-5vw, -3vh) scale(0.95); }
+}
+
+@keyframes mesh-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-6vw, -4vh) scale(0.9); }
+  66% { transform: translate(4vw, 6vh) scale(1.05); }
+}
+
+/* ============================================
+   NOISE / GRAIN OVERLAY
+   ============================================ */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ============================================
+   GLOBAL QUANTUM COLOR OVERRIDES
+   ============================================ */
 .text-quantum-glow,
 [class*='text-quantum'] {
   color: #00d9ff !important;
 }
 
-/* Border colors */
 .border-quantum-glow,
 [class*='border-quantum'] {
   border-color: #00d9ff;
 }
 
-/* Ring colors (focus states) */
 .ring-quantum-glow,
 [class*='ring-quantum'] {
   --tw-ring-color: #00d9ff;
 }
 
-/* Background colors */
 .bg-quantum-glow,
 [class*='bg-quantum'][class*='glow'] {
   background: rgba(0, 217, 255, 0.1);
 }
 
-/* Shadow colors */
 .shadow-quantum-glow,
 [class*='shadow-quantum'] {
   box-shadow: 0 0 20px rgba(0, 217, 255, 0.4), 0 0 40px rgba(0, 217, 255, 0.2);
 }
 
-/* SVG elements with cyan color */
 svg path[stroke*='00d9ff'],
 svg path[fill*='00d9ff'],
 svg circle[stroke*='00d9ff'],
@@ -167,7 +375,6 @@ svg[class*='text-quantum'] {
   filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.5));
 }
 
-/* Icons with cyan color classes */
 .text-quantum-glow svg,
 [class*='text-quantum'] svg {
   filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.5));
@@ -183,10 +390,8 @@ div[class*="relative"] > img[class*="rounded-full"][alt="Avatar"] {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
-  ring-width: 0px !important;
 }
 
-/* More specific override for Discord avatar images */
 img[alt="Avatar"][class*="rounded-full"] {
   --tw-ring-width: 0px !important;
   --tw-ring-color: transparent !important;
@@ -195,45 +400,44 @@ img[alt="Avatar"][class*="rounded-full"] {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
-  ring-width: 0px !important;
 }
 
-/* Custom scrollbar for webkit browsers */
+/* ============================================
+   SCROLLBAR
+   ============================================ */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(26, 26, 46, 0.5);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 217, 255, 0.4);
-  border-radius: 4px;
+  background: rgba(0, 217, 255, 0.25);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 217, 255, 0.6);
+  background: rgba(0, 217, 255, 0.5);
 }
 
-/* Terminal animation styles */
+/* ============================================
+   TERMINAL CURSOR
+   ============================================ */
 @keyframes blink {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 .terminal-cursor {
   animation: blink 1s infinite;
 }
 
-/* Particle canvas */
+/* ============================================
+   PARTICLE CANVAS
+   ============================================ */
 #particle-canvas {
   position: fixed;
   top: 0;
@@ -244,4 +448,40 @@ img[alt="Avatar"][class*="rounded-full"] {
   pointer-events: none;
   mix-blend-mode: screen;
   opacity: 0.9;
+}
+
+/* ============================================
+   ANIMATED NUMBER COUNTER
+   ============================================ */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   BENTO GRID - Home dashboard
+   ============================================ */
+.bento-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1024px) {
+  .bento-grid {
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: minmax(0, auto);
+  }
+  .bento-discord { grid-column: span 4; grid-row: span 2; }
+  .bento-music { grid-column: span 4; }
+  .bento-waka { grid-column: span 4; }
+  .bento-uptime { grid-column: span 4; }
+  .bento-activity { grid-column: span 4; }
+}
+
+/* ============================================
+   GAUGE - Circular SVG gauge
+   ============================================ */
+.gauge-ring {
+  transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
 }

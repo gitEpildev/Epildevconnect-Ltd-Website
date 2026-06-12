@@ -34,7 +34,7 @@ export default function TermsOfService() {
           <section>
             <h2 className="text-2xl font-bold mb-4">1. Acceptance of Terms</h2>
             <p className="text-gray-300 leading-relaxed">
-              By accessing and using MY HUB ("the Service"), you accept and agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Service.
+              By accessing and using Epildevconnect Ltd ("the Service"), you accept and agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Service.
             </p>
           </section>
 
@@ -183,7 +183,7 @@ export default function TermsOfService() {
           {/* Acknowledgment */}
           <section className="border-t border-white border-opacity-10 pt-6">
             <p className="text-gray-400 italic text-center">
-              By using MY HUB, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service and our Privacy Policy.
+              By using Epildevconnect Ltd, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service and our Privacy Policy.
             </p>
           </section>
         </motion.div>

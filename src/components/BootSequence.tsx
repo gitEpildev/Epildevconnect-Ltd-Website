@@ -7,7 +7,7 @@ interface BootSequenceProps {
 }
 
 const bootMessages = [
-  'Initialising MY HUB...',
+  'Initialising Epildevconnect...',
   'Loading quantum core...',
   'Connecting to Lanyard API...',
   'Syncing Last.fm stream...',

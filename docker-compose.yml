@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: myhub-postgres
@@ -13,20 +10,28 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-1800}:5432"  # External port from .env (default 1800), internal 5432
-    networks:
-      - myhub-network
+      - "${POSTGRES_PORT:-1800}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-myhub_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-myhub}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # MY HUB Application
   myhub:
     build:
       context: .
-      dockerfile: Dockerfile
+      args:
+        - VITE_DISCORD_USER_ID=${VITE_DISCORD_USER_ID}
+        - VITE_ADMIN_DISCORD_ID=${ADMIN_DISCORD_ID}
+        - VITE_GITHUB_USERNAME=${VITE_GITHUB_USERNAME}
+        - VITE_GITHUB_FEATURED_REPO=${VITE_GITHUB_FEATURED_REPO}
+        - VITE_SOCIAL_DISCORD=${VITE_SOCIAL_DISCORD}
+        - VITE_SOCIAL_TELEGRAM=${VITE_SOCIAL_TELEGRAM}
+        - VITE_SOCIAL_TWITTER=${VITE_SOCIAL_TWITTER}
+        - VITE_SOCIAL_INSTAGRAM=${VITE_SOCIAL_INSTAGRAM}
+        - VITE_SOCIAL_YOUTUBE=${VITE_SOCIAL_YOUTUBE}
+        - VITE_SOCIAL_TIKTOK=${VITE_SOCIAL_TIKTOK}
+        - VITE_SOCIAL_FACEBOOK=${VITE_SOCIAL_FACEBOOK}
     container_name: myhub-app
     restart: unless-stopped
     network_mode: "host"
@@ -40,35 +45,18 @@ services:
       - FRONTEND_PORT=${FRONTEND_PORT:-1500}
       - BACKEND_PORT=${BACKEND_PORT:-1600}
       - DISCORD_USER_ID=${VITE_DISCORD_USER_ID}
-      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
-      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
-      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-      - ADMIN_DISCORD_ID=${ADMIN_DISCORD_ID}
-      - LASTFM_USERNAME=${LASTFM_USERNAME}
-      - LASTFM_API_KEY=${LASTFM_API_KEY}
-      - WAKATIME_API_KEY=${WAKATIME_API_KEY}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - GITHUB_USERNAME=${GITHUB_USERNAME:-gitEpildev}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
-      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
-      - SESSION_SECRET=${SESSION_SECRET}
       - POSTGRES_HOST=localhost
       - POSTGRES_PORT=${POSTGRES_PORT:-1800}
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-myhub}
     healthcheck:
-      test: [ "CMD", "node", "-e", "require('http').get('http://localhost:1600/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" ]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:1600/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # Cloudflare Tunnel (cloudflared)
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: myhub-cloudflared
@@ -78,19 +66,10 @@ services:
       myhub:
         condition: service_healthy
     environment:
-      - TUNNEL_TOKEN=eyJhIjoiYzM3YWM5NWI4ZmIyYjg0YjA3NDRhM2VjYTI4NDhiNWIiLCJzIjoiWG1GcEdUY200YnhZMkp1dHlKR1JpMlNsTlltRUJIL0VNQ2dzNFVuV0xyTT0iLCJ0IjoiMTQzZGU2NTYtM2VkYy00Y2ZlLTk0NjMtNTBmYjZiMzU0MzE4In0=
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
     command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
       - ./cloudflare-tunnel-config.yml:/etc/cloudflared/config.yml:ro
-    healthcheck:
-      test: ["CMD", "cloudflared", "tunnel", "info", "143de656-3edc-4cfe-9463-50fb6b354318"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-networks:
-  myhub-network:
-    driver: bridge
 
 volumes:
   postgres_data:

@@ -1,10 +1,59 @@
 import { motion } from 'framer-motion';
-import { Wrench, ExternalLink } from 'lucide-react';
+import { Wrench, ExternalLink, Code2, Database, Terminal, Globe, Server, Layers, Music } from 'lucide-react';
 
 interface TechItem {
   name: string;
   url: string;
+  icon?: string;
 }
+
+const categoryIcons: Record<string, any> = {
+  'Programming Languages': Code2,
+  'Web & Markup': Globe,
+  'Database Languages': Database,
+  'Scripting Languages': Terminal,
+  'Low-Level': Layers,
+  'Frontend Frameworks': Globe,
+  'Backend & APIs': Server,
+  'Databases & Storage': Database,
+  'DevOps & Tools': Server,
+  'Audio & Media': Music,
+};
+
+const deviconMap: Record<string, string> = {
+  'C': 'devicon-c-plain',
+  'C++': 'devicon-cplusplus-plain',
+  'Java': 'devicon-java-plain',
+  'C#': 'devicon-csharp-plain',
+  'Python': 'devicon-python-plain',
+  'JavaScript': 'devicon-javascript-plain',
+  'TypeScript': 'devicon-typescript-plain',
+  'Go': 'devicon-go-plain',
+  'Swift': 'devicon-swift-plain',
+  'PHP': 'devicon-php-plain',
+  'HTML': 'devicon-html5-plain',
+  'CSS': 'devicon-css3-plain',
+  'SCSS': 'devicon-sass-original',
+  'SQL': 'devicon-azuresqldatabase-plain',
+  'Bash': 'devicon-bash-plain',
+  'Lua': 'devicon-lua-plain',
+  'React': 'devicon-react-original',
+  'Next.js': 'devicon-nextjs-plain',
+  'Vue.js': 'devicon-vuejs-plain',
+  'Tailwind CSS': 'devicon-tailwindcss-original',
+  'Node.js': 'devicon-nodejs-plain',
+  'Express': 'devicon-express-original',
+  'GraphQL': 'devicon-graphql-plain',
+  'PostgreSQL': 'devicon-postgresql-plain',
+  'MongoDB': 'devicon-mongodb-plain',
+  'MySQL': 'devicon-mysql-plain',
+  'Docker': 'devicon-docker-plain',
+  'GitHub Actions': 'devicon-githubactions-plain',
+  'AWS': 'devicon-amazonwebservices-plain-wordmark',
+  'Cloudflare': 'devicon-cloudflare-plain',
+  'Nginx': 'devicon-nginx-original',
+  'Linux': 'devicon-linux-plain',
+};
 
 const techStack: Record<string, TechItem[]> = {
   'Programming Languages': [
@@ -81,10 +130,10 @@ export default function TechStack() {
   return (
     <div className="min-h-screen px-4 py-20 lg:px-12 lg:py-24">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
           transition={{ duration: 0.6 }}
           className="mb-12"
         >
@@ -99,62 +148,63 @@ export default function TechStack() {
           </p>
         </motion.div>
 
-        {/* Tech Categories */}
-        <div className="space-y-8">
-          {Object.entries(techStack).map(([category, items], categoryIndex) => (
-            <motion.div
-              key={category}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: categoryIndex * 0.1 }}
-              className="glass glass-hover rounded-2xl p-6"
-            >
-              <h3 className="text-xl font-mono font-bold mb-6 text-quantum-glow">
-                {category}
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {items.map((item, itemIndex) => (
-                  <motion.a
-                    key={item.name}
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{
-                      duration: 0.3,
-                      delay: categoryIndex * 0.1 + itemIndex * 0.05,
-                    }}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="flex items-center justify-between gap-3 p-4 bg-white bg-opacity-5 hover:bg-opacity-10 rounded-xl transition-all group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 bg-quantum-glow rounded-full group-hover:scale-150 transition-transform"></div>
-                      <span className="font-mono text-sm">{item.name}</span>
-                    </div>
-                    <ExternalLink className="w-3 h-3 text-gray-500 group-hover:text-quantum-glow transition-colors opacity-0 group-hover:opacity-100" />
-                  </motion.a>
-                ))}
-              </div>
-            </motion.div>
-          ))}
+        <div className="space-y-6">
+          {Object.entries(techStack).map(([category, items], categoryIndex) => {
+            const CatIcon = categoryIcons[category] || Code2;
+            return (
+              <motion.div
+                key={category}
+                initial={{ opacity: 0, y: 25 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-30px' }}
+                transition={{ duration: 0.5, delay: categoryIndex * 0.05 }}
+                className="glass glass-hover rounded-2xl p-6"
+              >
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="p-2 rounded-lg bg-quantum-glow/10">
+                    <CatIcon className="w-4 h-4 text-quantum-glow" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-quantum-glow tracking-tight">
+                    {category}
+                  </h3>
+                  <span className="text-xs font-mono text-gray-500 ml-auto">{items.length}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                  {items.map((item, itemIndex) => {
+                    const devicon = deviconMap[item.name];
+                    return (
+                      <motion.a
+                        key={item.name}
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        whileInView={{ opacity: 1, scale: 1 }}
+                        viewport={{ once: true }}
+                        transition={{
+                          duration: 0.3,
+                          delay: categoryIndex * 0.04 + itemIndex * 0.03,
+                        }}
+                        whileHover={{ scale: 1.04, y: -2 }}
+                        whileTap={{ scale: 0.97 }}
+                        className="flex items-center gap-3 p-3 bg-white/[0.04] hover:bg-white/[0.09] rounded-xl transition-all group cursor-pointer border border-transparent hover:border-white/[0.08]"
+                      >
+                        {devicon ? (
+                          <i className={`${devicon} text-lg text-gray-400 group-hover:text-quantum-glow transition-colors`} />
+                        ) : (
+                          <div className="w-[18px] h-[18px] rounded-full bg-gradient-to-br from-quantum-glow/40 to-purple-500/30 group-hover:from-quantum-glow/70 group-hover:to-purple-500/50 transition-all flex-shrink-0" />
+                        )}
+                        <span className="font-mono text-sm text-gray-300 group-hover:text-white transition-colors truncate">{item.name}</span>
+                        <ExternalLink className="w-3 h-3 text-gray-600 group-hover:text-quantum-glow transition-all opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0" />
+                      </motion.a>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
-
-        {/* Additional Info */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.8 }}
-          className="mt-12 glass rounded-2xl p-6"
-        >
-          <p className="text-gray-400 text-sm font-mono text-center">
-            Always learning and exploring new technology
-          </p>
-        </motion.div>
       </div>
     </div>
   );
 }
-
-

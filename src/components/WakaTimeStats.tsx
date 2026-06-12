@@ -34,35 +34,19 @@ export default function WakaTimeStats({
   
   const hasEverLoaded = data !== null && data !== undefined; // Has hook returned anything?
   
-  // Update hasEverRendered if we have data prop (don't require stats to exist)
-  // CRITICAL: Don't require stats to exist - data prop existence is enough
+  // Track first successful load so the panel never disappears once rendered
   useEffect(() => {
     if (hasEverLoaded && !hasEverRendered) {
-      console.log('[WakaTimeStats] Marking as rendered - data received');
       setHasEverRendered(true);
       try {
         sessionStorage.setItem(storageKey, 'true');
-      } catch (e) {
-        console.warn('[WakaTimeStats] Failed to save to sessionStorage:', e);
+      } catch {
+        // sessionStorage unavailable; skeleton may reappear on remount
       }
     }
   }, [hasEverLoaded, hasEverRendered, storageKey]);
-  
-  // DEBUG: Log component render state
-  console.log('[WakaTimeStats] Render:', {
-    data: data !== null && data !== undefined,
-    stats: !!stats,
-    hasEverLoaded,
-    hasEverRendered,
-    isLoading,
-    isInitialLoad: !hasEverRendered,
-    timestamp: new Date().toISOString()
-  });
-  
-  // CRITICAL: Only show loading if we've NEVER rendered with data before
-  // DEFENSIVE: Once we've rendered once, ALWAYS render the panel (even if stats is temporarily null)
+
   if (!hasEverRendered) {
-    console.log('[WakaTimeStats] Showing loading skeleton (no data yet)');
     return (
       <div className="glass rounded-2xl p-6 h-full">
         <div className="animate-pulse space-y-4">
@@ -73,13 +57,6 @@ export default function WakaTimeStats({
     );
   }
 
-  // CRITICAL: If we've received data before (even if current fetch failed), ALWAYS render
-  // The hook guarantees data exists once loaded, so we should always have something to show
-  console.log('[WakaTimeStats] Rendering with data (hasEverReceivedData=true)');
-
-  // ALWAYS render panel structure - hook guarantees data exists once loaded
-  // Use fallbacks for missing stats, but panel NEVER disappears
-  // Extract stats from whatever structure exists - handle all possible formats
   const topLanguages = stats?.languages?.slice(0, 5) 
     || stats?.data?.languages?.slice(0, 5) 
     || data?.languages?.slice(0, 5)

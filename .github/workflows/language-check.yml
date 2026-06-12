@@ -1,0 +1,54 @@
+name: Language Check
+
+# Enforces house style:
+# 1. No em dashes or en dashes anywhere in source or docs.
+# 2. UK English spellings in user-facing text (US spellings fail the build).
+#    CSS property names and code identifiers are excluded.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  language:
+    name: UK English and no long dashes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for em and en dashes
+        run: |
+          set -e
+          echo "Checking for em dashes (U+2014) and en dashes (U+2013)..."
+          MATCHES=$(grep -rPn '\x{2014}|\x{2013}' \
+            --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
+            --include='*.css' --include='*.html' --include='*.md' --include='*.json' \
+            src server public index.html README.md 2>/dev/null || true)
+          if [ -n "$MATCHES" ]; then
+            echo "Em or en dashes found. Use a hyphen, comma, or full stop instead:"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "No long dashes found."
+
+      - name: Check for US English spellings
+        run: |
+          set -e
+          echo "Checking user-facing strings for US English spellings..."
+          # Words checked as whole words, case-insensitive.
+          # CSS files are skipped entirely (CSS requires US spellings).
+          # Lines that are CSS-in-JS properties (color:, behavior:) are excluded.
+          PATTERN='\b(authorized|unauthorized|organize[ds]?|customize[ds]?|optimized|favorite[s]?|behavior[s]?|cataloged|labeled|signaled|traveled|canceled|colorful|colored)\b'
+          MATCHES=$(grep -rEin "$PATTERN" \
+            --include='*.tsx' --include='*.md' \
+            src README.md 2>/dev/null \
+            | grep -vE "(color:|backgroundColor|borderColor|textColor|scroll-behavior|behavior: 'smooth'|behavior: \"smooth\")" || true)
+          if [ -n "$MATCHES" ]; then
+            echo "US English spellings found. Use UK English (authorised, organise, customise, favourite, behaviour, cancelled, colourful):"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "No US English spellings found."

@@ -83,7 +83,7 @@ export default function ActivityFeed({
       
       activities.push({
         icon: Music,
-        text: `Now playing: ${trackName} — ${artistName}`,
+        text: `Now playing: ${trackName} - ${artistName}`,
         color: 'text-green-400',
       });
     }
